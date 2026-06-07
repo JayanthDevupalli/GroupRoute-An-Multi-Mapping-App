@@ -22,10 +22,12 @@ function useScrollReveal() {
 
 export default function LoginPage() {
   const pageRef = useScrollReveal();
-  const { loginWithGoogle } = useAuth();
+  const { loginWithGoogle, loginWithEmail } = useAuth();
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
 
   const handleGoogleLogin = async () => {
     try {
@@ -37,6 +39,18 @@ export default function LoginPage() {
       setError(err.message || "Failed to sign in with Google.");
     } finally {
       setIsGoogleLoading(false);
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    try {
+      // @ts-ignore
+      await loginWithEmail(email, password);
+      router.push('/lobby');
+    } catch (err: any) {
+      setError(err.message || 'Failed to sign in with email.');
     }
   };
 
@@ -94,12 +108,12 @@ export default function LoginPage() {
           </div>
 
           {/* Form */}
-          <form className="space-y-5">
+          <form className="space-y-5" onSubmit={handleSubmit}>
             <div>
               <label className="block text-sm font-semibold text-slate-700 mb-2">Email Address</label>
               <div className="relative">
                 <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                <input type="email" placeholder="you@example.com" className="w-full py-3.5 pl-11 pr-4 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all outline-none text-slate-900 font-medium placeholder-slate-400" required />
+                <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" placeholder="you@example.com" className="w-full py-3.5 pl-11 pr-4 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all outline-none text-slate-900 font-medium placeholder-slate-400" required />
               </div>
             </div>
 
@@ -110,16 +124,13 @@ export default function LoginPage() {
               </div>
               <div className="relative">
                 <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                <input type="password" placeholder="••••••••" className="w-full py-3.5 pl-11 pr-4 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all outline-none text-slate-900 font-medium placeholder-slate-400" required />
+                <input value={password} onChange={(e) => setPassword(e.target.value)} type="password" placeholder="••••••••" className="w-full py-3.5 pl-11 pr-4 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all outline-none text-slate-900 font-medium placeholder-slate-400" required />
               </div>
             </div>
-
             <div className="pt-2">
-              <Link href="/lobby" className="block">
-                <button type="button" className="w-full bg-slate-900 hover:bg-slate-800 text-white font-semibold py-4 rounded-xl transition-all shadow-md hover:shadow-lg active:scale-[0.98]">
-                  Sign In to GroupRoute
-                </button>
-              </Link>
+              <button type="submit" className="w-full bg-slate-900 hover:bg-slate-800 text-white font-semibold py-4 rounded-xl transition-all shadow-md hover:shadow-lg active:scale-[0.98]">
+                Sign In to GroupRoute
+              </button>
             </div>
           </form>
         </div>
