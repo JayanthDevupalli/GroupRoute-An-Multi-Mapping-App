@@ -8,7 +8,7 @@ import ProtectedRoute from '@/components/ProtectedRoute';
 import ChatPanel from '@/components/ChatPanel';
 import { db } from '@/lib/firebase';
 import { collection, doc, setDoc, onSnapshot, serverTimestamp, deleteDoc, getDoc, updateDoc, addDoc, query, orderBy, limit } from 'firebase/firestore';
-import { Copy, Navigation, CheckCircle2, Loader2, MapPin, Users, Eye, EyeOff, MessageCircle, UserMinus, Trash2, LogOut, Search, RefreshCcw, Zap } from 'lucide-react';
+import { Copy, Navigation, CheckCircle2, Loader2, MapPin, Users, Eye, EyeOff, MessageCircle, UserMinus, Trash2, LogOut, Search, RefreshCcw, Zap, Car, Bike, Footprints, Coffee, Utensils, Trees, Sparkles, Compass, ExternalLink, X, Check } from 'lucide-react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import * as turf from '@turf/turf';
@@ -23,6 +23,7 @@ interface Participant {
   isOnline?: boolean;
   eta?: number; // seconds
   routeGeoJSON?: string;
+  transitMode?: 'driving' | 'cycling' | 'walking';
 }
 
 const getUserColor = (uid: string) => {
@@ -37,6 +38,7 @@ const getUserColor = (uid: string) => {
 interface Destination {
   lat: number;
   lng: number;
+  name?: string;
 }
 
 export default function RoomPage() {
@@ -62,6 +64,9 @@ export default function RoomPage() {
   const [isComputing, setIsComputing] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const [latestMessage, setLatestMessage] = useState<any>(null);
+  const [sidebarTab, setSidebarTab] = useState<'members' | 'planner'>('members');
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
   
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
@@ -141,6 +146,8 @@ export default function RoomPage() {
     let isInitialJoin = true;
     let watchId: number;
 
+    const preferredTransitMode = localStorage.getItem('grouproute_transit_mode') || 'driving';
+
     const updateLocation = async (lat: number, lng: number) => {
       try {
         if (isInitialJoin) {
@@ -148,6 +155,7 @@ export default function RoomPage() {
             name: user.displayName || 'Guest',
             lat,
             lng,
+            transitMode: preferredTransitMode,
             isOnline: true,
             lastActive: serverTimestamp(),
             joinedAt: serverTimestamp(),
@@ -317,6 +325,8 @@ export default function RoomPage() {
     }
   };
 
+
+
   // 5. Update Map Markers & Bounds
   useEffect(() => {
     if (!map.current) return;
@@ -440,7 +450,16 @@ export default function RoomPage() {
       lastRoutePos.current = { lat: currentUser.lat, lng: currentUser.lng };
       const fetchRoute = async () => {
         try {
-          const url = `https://router.project-osrm.org/route/v1/driving/${currentUser.lng},${currentUser.lat};${destination.lng},${destination.lat}?overview=full&geometries=geojson`;
+          const mode = currentUser.transitMode || 'driving';
+          let baseUrl = 'https://router.project-osrm.org/route/v1/driving/';
+          if (mode === 'walking') {
+            baseUrl = 'https://routing.openstreetmap.de/routed-foot/route/v1/driving/';
+          } else if (mode === 'cycling') {
+            baseUrl = 'https://routing.openstreetmap.de/routed-bike/route/v1/driving/';
+          } else {
+            baseUrl = 'https://routing.openstreetmap.de/routed-car/route/v1/driving/';
+          }
+          const url = `${baseUrl}${currentUser.lng},${currentUser.lat};${destination.lng},${destination.lat}?overview=full&geometries=geojson`;
           const response = await fetch(url);
           const data = await response.json();
           if (data.routes && data.routes[0] && roomId) {
@@ -535,24 +554,97 @@ export default function RoomPage() {
     return () => unsub();
   }, [roomId, isChatOpen, user]);
 
+  // 8.5 Smoothly resize map during chat toggle transitions
+  useEffect(() => {
+    if (!map.current) return;
+    const interval = setInterval(() => {
+      if (map.current) map.current.resize();
+    }, 16); // ~60fps
+    
+    const timeout = setTimeout(() => {
+      clearInterval(interval);
+      if (map.current) map.current.resize();
+    }, 600); // slightly longer than CSS transition
+    
+    return () => {
+      clearInterval(interval);
+      clearTimeout(timeout);
+    };
+  }, [isChatOpen]);
+
   const forceRefreshLocation = () => {
-    if ("geolocation" in navigator && user && roomId) {
-      navigator.geolocation.getCurrentPosition(
-        async (position) => {
-          try {
-            await updateDoc(doc(db, `rooms/${roomId}/participants`, user.uid), {
-              lat: position.coords.latitude,
-              lng: position.coords.longitude,
-              lastActive: serverTimestamp(),
-            });
-            if (map.current) {
-              map.current.flyTo({ center: [position.coords.longitude, position.coords.latitude], zoom: 15, duration: 1500 });
-            }
-          } catch (e) { console.error("Refresh location failed", e); }
-        },
-        (e) => console.error(e),
-        { enableHighAccuracy: true, maximumAge: 0 }
-      );
+    if (isRefreshing) return;
+    setIsRefreshing(true);
+    setRefreshError(null);
+
+    if (!("geolocation" in navigator) || !user || !roomId) {
+      setRefreshError("Geolocation is not supported by your browser.");
+      setIsRefreshing(false);
+      return;
+    }
+
+    const handleSuccess = async (position: GeolocationPosition) => {
+      try {
+        const { latitude, longitude } = position.coords;
+        await updateDoc(doc(db, `rooms/${roomId}/participants`, user.uid), {
+          lat: latitude,
+          lng: longitude,
+          lastActive: serverTimestamp(),
+        });
+        if (map.current) {
+          map.current.flyTo({ 
+            center: [longitude, latitude], 
+            zoom: 15.5, 
+            duration: 2000,
+            essential: true
+          });
+        }
+      } catch (e) {
+        console.error("Refresh location failed", e);
+        setRefreshError("Failed to update database.");
+      } finally {
+        setTimeout(() => setIsRefreshing(false), 1200);
+      }
+    };
+
+    const handleFailure = (fallbackError: GeolocationPositionError) => {
+      console.error("Standard geolocation failed too:", fallbackError);
+      let msg = "Could not retrieve your location.";
+      if (fallbackError.code === 1) {
+        msg = "Permission denied. Check browser location settings.";
+      } else if (fallbackError.code === 2) {
+        msg = "Position unavailable. Verify device location settings.";
+      } else if (fallbackError.code === 3) {
+        msg = "Request timed out. Please try again.";
+      }
+      setRefreshError(msg);
+      setIsRefreshing(false);
+      setTimeout(() => setRefreshError(null), 5000);
+    };
+
+    // Attempt with high accuracy first (allowing 10s cached data), falling back to standard accuracy (allowing 30s cached data)
+    navigator.geolocation.getCurrentPosition(
+      handleSuccess,
+      (error) => {
+        console.warn("High accuracy geolocation failed, trying standard accuracy...", error);
+        navigator.geolocation.getCurrentPosition(
+          handleSuccess,
+          handleFailure,
+          { enableHighAccuracy: false, maximumAge: 30000, timeout: 10000 }
+        );
+      },
+      { enableHighAccuracy: true, maximumAge: 10000, timeout: 6000 }
+    );
+  };
+
+  const handleClearDestination = async () => {
+    if (!isHost || !roomId) return;
+    try {
+      await updateDoc(doc(db, 'rooms', roomId), { 
+        destination: null 
+      });
+    } catch (error) {
+      console.error("Failed to clear destination", error);
     }
   };
 
@@ -562,13 +654,16 @@ export default function RoomPage() {
     }
   };
 
-  const formatETA = (seconds?: number) => {
+  const formatETA = (seconds?: number, mode?: string) => {
     if (seconds === undefined) return null;
     const mins = Math.round(seconds / 60);
-    if (mins < 60) return `${mins} min drive`;
+    const label = mode === 'walking' ? 'walk' :
+                  mode === 'bicycling' ? 'cycle' :
+                  mode === 'transit' ? 'transit' : 'drive';
+    if (mins < 60) return `${mins} min ${label}`;
     const hrs = Math.floor(mins / 60);
     const remMins = mins % 60;
-    return `${hrs}h ${remMins}m drive`;
+    return `${hrs}h ${remMins}m ${label}`;
   };
 
   const copyInvite = () => {
@@ -679,174 +774,372 @@ export default function RoomPage() {
           </div>
         )}
 
+        {/* Geolocation Refresh Error Toast */}
+        {refreshError && (
+          <div className="fixed top-28 left-1/2 -translate-x-1/2 z-[100] animate-in slide-in-from-top-4 fade-in duration-300">
+            <div className="bg-white/95 backdrop-blur-xl border border-rose-200 shadow-[0_8px_30px_rgba(225,29,72,0.1)] rounded-2xl p-3 px-5 flex items-center gap-3">
+              <div className="w-8 h-8 rounded-full bg-rose-50 border border-rose-100 flex items-center justify-center text-rose-500 shrink-0">
+                <X size={15} />
+              </div>
+              <div className="flex flex-col text-left">
+                <span className="text-[12px] font-bold text-rose-600">Location Refresh Failed</span>
+                <span className="text-[12px] text-slate-500 font-semibold">{refreshError}</span>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="flex-1 flex flex-col lg:flex-row gap-6 h-full min-h-0 w-full max-w-[1600px] mx-auto">
           
           {/* Left Column - Planning & Session Details */}
           <div className="w-full lg:w-[320px] shrink-0 flex flex-col gap-4 h-full">
             
-            {/* Session Token Card */}
-            <div className="bg-white border border-slate-200 shadow-sm rounded-3xl p-5 shrink-0 relative group/card">
-              {isHost ? (
-                <button onClick={handleDeleteGroup} className="absolute top-4 right-4 text-slate-300 hover:text-rose-600 transition-colors p-1" title="End Session">
-                  <Trash2 size={16} />
-                </button>
-              ) : (
-                <button onClick={handleLeaveGroup} className="absolute top-4 right-4 text-slate-300 hover:text-rose-600 transition-colors p-1" title="Leave Session">
-                  <LogOut size={16} />
-                </button>
-              )}
-              <div className="flex items-center justify-between mb-2.5 px-1 pr-6">
-                <p className="text-[11px] font-bold text-[#64748B] uppercase tracking-[0.15em] truncate">{roomName || 'Group Session'}</p>
-                <button onClick={() => setShowToken(!showToken)} className="text-[#64748B] hover:text-[#0284C7] transition-colors" title="Toggle Token">
-                  {showToken ? <EyeOff size={14} /> : <Eye size={14} />}
-                </button>
-              </div>
-              <div 
-                onClick={copyInvite}
-                className="group relative bg-[#F8FAFC] border border-slate-200 rounded-[20px] p-3.5 flex items-center justify-between cursor-pointer hover:bg-white hover:border-[#0284C7]/30 hover:shadow-sm transition-all"
-              >
-                <div className="text-[22px] font-bold tracking-[0.2em] text-[#1E293B] font-mono">
-                  {showToken ? roomId : '••••••'}
-                </div>
-                <div className={`w-9 h-9 rounded-full flex items-center justify-center transition-all shadow-sm ${copied ? 'bg-emerald-100 text-emerald-600' : 'bg-white text-[#64748B] group-hover:text-[#0284C7]'}`}>
-                  {copied ? <CheckCircle2 size={18} /> : <Copy size={16} />}
-                </div>
-              </div>
-            </div>
-
-            {/* Destination Planning Card */}
-            <div className="bg-white border border-slate-200 shadow-sm rounded-3xl p-5 shrink-0 flex flex-col z-20">
-              <p className="text-[11px] font-bold text-[#64748B] uppercase tracking-[0.15em] mb-3">Trip Planning</p>
-              
-              {isHost && (
-                <div className="relative mb-3">
-                  <form onSubmit={handleSearch} className="relative">
-                    <input 
-                      type="text" 
-                      value={searchQuery} 
-                      onChange={(e) => setSearchQuery(e.target.value)} 
-                      placeholder="Search destination..." 
-                      className="w-full text-[13px] font-medium bg-[#F8FAFC] border border-slate-200 rounded-xl py-2.5 pl-3 pr-10 outline-none focus:bg-white focus:border-[#0284C7] focus:ring-2 focus:ring-[#0284C7]/10 transition-all text-[#1E293B] placeholder-[#94A3B8]"
-                    />
-                    <button type="submit" disabled={isSearching} className="absolute right-2 top-2 bottom-2 text-[#64748B] hover:text-[#0284C7] transition-colors disabled:opacity-50">
-                      {isSearching ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
-                    </button>
-                  </form>
-                  <button
-                    onClick={computeGravityCenter}
-                    disabled={isComputing || participants.length < 2}
-                    className="mt-2.5 w-full flex items-center justify-center gap-2 bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-600 hover:to-purple-600 text-white rounded-xl py-2.5 text-[13px] font-semibold transition-all disabled:opacity-50 disabled:grayscale shadow-[0_4px_12px_rgba(99,102,241,0.25)] border border-indigo-400/50 hover:shadow-[0_6px_16px_rgba(99,102,241,0.35)]"
-                    title="Calculate the exact midpoint of all members and find a venue"
-                  >
-                    {isComputing ? <Loader2 size={16} className="animate-spin" /> : <Zap size={16} />}
-                    Auto-Compute Gravity Center
+            {/* Sidebar Header: Room Name, Token, & Host controls */}
+            <div className="flex items-center justify-between px-1 shrink-0">
+              <div className="flex flex-col min-w-0">
+                <h2 className="text-[16px] font-black text-slate-900 tracking-tight truncate leading-tight">
+                  {roomName || 'Group Session'}
+                </h2>
+                
+                {/* Space-efficient Token display */}
+                <div className="flex items-center gap-1.5 mt-1">
+                  <span className="text-[11px] font-mono font-bold bg-slate-100 text-slate-650 px-1.5 py-0.5 rounded border border-slate-200 uppercase tracking-wider">
+                    Code: {showToken ? roomId : '••••••'}
+                  </span>
+                  <button onClick={() => setShowToken(!showToken)} className="text-slate-400 hover:text-indigo-600 transition-colors p-0.5 animate-in fade-in" title="Toggle Token">
+                    {showToken ? <EyeOff size={11} /> : <Eye size={11} />}
                   </button>
-
-                  {searchResults.length > 0 && (
-                    <div className="absolute top-full left-0 right-0 bg-white border border-slate-200 rounded-xl mt-1.5 max-h-48 overflow-y-auto z-30 shadow-[0_10px_25px_rgba(0,0,0,0.05)] custom-scrollbar">
-                      {searchResults.map((r, i) => (
-                        <div 
-                          key={i} 
-                          onClick={() => selectSearchResult(r)} 
-                          className="p-3 text-[12px] font-medium text-[#475569] cursor-pointer hover:bg-sky-50 hover:text-[#0284C7] border-b border-slate-50 last:border-0 transition-colors line-clamp-2"
-                        >
-                          {r.display_name}
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                  <button onClick={copyInvite} className={`text-slate-400 hover:text-indigo-600 transition-colors p-0.5 ${copied ? 'text-emerald-600 hover:text-emerald-700' : ''}`} title="Copy Code">
+                    {copied ? <CheckCircle2 size={11} /> : <Copy size={11} />}
+                  </button>
                 </div>
-              )}
+              </div>
 
-              <div className={`rounded-[20px] p-4 text-center border transition-colors ${destination ? 'bg-rose-50/50 border-rose-100' : 'bg-[#F8FAFC] border-slate-200'}`}>
-                {destination ? (
-                  <>
-                    <div className="flex items-center justify-center gap-2 text-rose-500 mb-1.5">
-                      <MapPin size={18} />
-                      <span className="font-semibold text-[14px]">Destination Set</span>
-                    </div>
-                    {(destination as any).name && (
-                      <p className="text-[12px] font-medium text-rose-600 mb-1.5 line-clamp-2 px-2" title={(destination as any).name}>{(destination as any).name}</p>
-                    )}
-                    <button 
-                      onClick={() => flyToUser(destination.lat, destination.lng)} 
-                      className="text-[11px] font-bold text-rose-600 bg-rose-100/80 px-3 py-1.5 rounded-full mt-1.5 hover:bg-rose-200 transition-colors shadow-sm inline-flex items-center gap-1.5"
-                    >
-                      <Navigation size={12} />
-                      Locate Pin
-                    </button>
-                    {isHost && <p className="text-[10px] font-medium text-rose-600/60 mt-2">Search or click map to update.</p>}
-                  </>
+              {/* End/Leave controls */}
+              <div className="flex items-center shrink-0">
+                {isHost ? (
+                  <button onClick={handleDeleteGroup} className="text-slate-400 hover:text-rose-600 hover:bg-rose-50 p-2 rounded-full transition-all" title="End Session">
+                    <Trash2 size={15} />
+                  </button>
                 ) : (
-                  <>
-                    <div className="flex items-center justify-center gap-2 text-[#0284C7] mb-1.5">
-                      <Navigation size={18} />
-                      <span className="font-semibold text-[14px]">No Destination</span>
-                    </div>
-                    {isHost ? (
-                      <p className="text-[12px] font-medium text-sky-700/70">Search or click map to set spot.</p>
-                    ) : (
-                      <p className="text-[12px] font-medium text-slate-500">Waiting for leader...</p>
-                    )}
-                  </>
+                  <button onClick={handleLeaveGroup} className="text-slate-400 hover:text-rose-600 hover:bg-rose-50 p-2 rounded-full transition-all" title="Leave Session">
+                    <LogOut size={15} />
+                  </button>
                 )}
               </div>
             </div>
 
-            {/* Active Members Card */}
-            <div className="bg-white border border-slate-200 shadow-sm rounded-3xl flex-1 min-h-0 flex flex-col overflow-hidden">
-              <div className="p-5 border-b border-slate-100 flex items-center justify-between shrink-0 bg-white z-10">
-                <div className="flex items-center gap-2">
-                  <Users size={16} className="text-[#0284C7]" />
-                  <p className="text-[14px] font-bold text-[#1E293B]">Active Members</p>
+            {/* Segmented Tab Switcher */}
+            <div className="relative w-full h-[40px] bg-slate-100 rounded-xl p-0.5 flex items-center border border-slate-200 z-10 text-xs shrink-0">
+              <div
+                className="absolute top-0.5 bottom-0.5 w-[calc(50%-2px)] bg-white rounded-lg shadow-sm border border-slate-200 transition-all duration-400 ease-[cubic-bezier(0.34,1.56,0.64,1)]"
+                style={{ transform: sidebarTab === 'members' ? 'translateX(0)' : 'translateX(100%)' }}
+              />
+              <button
+                onClick={() => setSidebarTab('members')}
+                className={`flex-grow h-full rounded-lg font-bold z-10 transition-colors duration-200 ${sidebarTab === 'members' ? 'text-slate-900' : 'text-slate-500 hover:text-slate-800'}`}
+              >
+                <span className="flex items-center gap-1.5 justify-center">
+                  <Users size={13} className={sidebarTab === 'members' ? 'text-[#0284C7]' : 'text-slate-400'} />
+                  Members ({participants.length})
+                </span>
+              </button>
+              <button
+                onClick={() => setSidebarTab('planner')}
+                className={`flex-grow h-full rounded-lg font-bold z-10 transition-colors duration-200 ${sidebarTab === 'planner' ? 'text-slate-900' : 'text-slate-500 hover:text-slate-800'}`}
+              >
+                <span className="flex items-center gap-1.5 justify-center">
+                  <Compass size={13} className={sidebarTab === 'planner' ? 'text-[#0284C7]' : 'text-slate-400'} />
+                  Trip Planner {destination ? '•' : ''}
+                </span>
+              </button>
+            </div>
+
+            {/* Tab Panels with Custom 3D perspective flip transition */}
+            <div className="relative flex-1 min-h-0 w-full [perspective:1200px] z-0">
+              <div 
+                className={`relative w-full h-full [transform-style:preserve-3d] transition-transform duration-700 ease-[cubic-bezier(0.34,1.56,0.64,1)] ${
+                  sidebarTab === 'planner' ? '[transform:rotateY(180deg)]' : ''
+                }`}
+              >
+                
+                {/* Front Face: Active Members */}
+                <div 
+                  className={`absolute inset-0 w-full h-full flex flex-col [backface-visibility:hidden] [-webkit-backface-visibility:hidden] ${
+                    sidebarTab === 'members' ? 'pointer-events-auto z-10' : 'pointer-events-none z-0'
+                  }`}
+                >
+                  <div className="bg-white border border-slate-200 shadow-sm rounded-3xl flex-1 min-h-0 flex flex-col overflow-hidden">
+                    <div className="p-5 border-b border-slate-100 flex items-center justify-between shrink-0 bg-white z-10">
+                      <div className="flex items-center gap-2">
+                        <Users size={16} className="text-[#0284C7]" />
+                        <p className="text-[14px] font-bold text-[#1E293B]">Active Members</p>
+                      </div>
+                      <span className="bg-sky-50 text-[#0284C7] text-[11px] font-bold px-2 py-0.5 rounded-full">{participants.length}</span>
+                    </div>
+                    
+                    <div className="flex-1 overflow-y-auto p-3 custom-scrollbar bg-[#F8FAFC]">
+                      <div className="space-y-2.5">
+                        {participants.map((p) => {
+                          const isArrived = destination && p.distanceToDestination !== undefined && p.distanceToDestination < 0.05;
+                          const userColor = getUserColor(p.id);
+                          
+                          return (
+                            <div 
+                              key={p.id} 
+                              onClick={() => flyToUser(p.lat, p.lng)}
+                              style={{ borderLeft: `4px solid ${userColor}` }}
+                              className="group/member bg-white border border-slate-200 rounded-2xl p-3 cursor-pointer transition-all duration-200 hover:border-slate-350 hover:shadow-md active:scale-[0.99] flex flex-col gap-2 relative overflow-hidden"
+                            >
+                              {/* Member Row Header */}
+                              <div className="flex items-center justify-between gap-2.5">
+                                <div className="flex items-center gap-2.5 min-w-0">
+                                  {/* Avatar */}
+                                  <div className="relative shrink-0">
+                                    <div 
+                                      className="w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-[12px] border border-white/20 shadow-xs"
+                                      style={{ backgroundColor: userColor }}
+                                    >
+                                      {p.name.charAt(0).toUpperCase()}
+                                    </div>
+                                    <span 
+                                      className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white ${p.isOnline !== false ? 'bg-emerald-500' : 'bg-slate-300'}`} 
+                                    />
+                                  </div>
+
+                                  {/* Name */}
+                                  <div className="min-w-0">
+                                    <h4 className="font-bold text-[13px] text-slate-800 truncate leading-tight flex items-center gap-1.5">
+                                      {p.id === user?.uid ? `${p.name} (You)` : p.name}
+                                    </h4>
+                                  </div>
+                                </div>
+
+                                {/* Transit Indicator Pill */}
+                                <div className="shrink-0">
+                                  {p.transitMode === 'walking' && (
+                                    <span className="flex items-center gap-1 bg-emerald-50 text-emerald-700 text-[9px] font-extrabold px-1.5 py-0.5 rounded-md border border-emerald-100">
+                                      <Footprints size={10} /> Walk
+                                    </span>
+                                  )}
+                                  {p.transitMode === 'cycling' && (
+                                    <span className="flex items-center gap-1 bg-sky-50 text-sky-700 text-[9px] font-extrabold px-1.5 py-0.5 rounded-md border border-sky-100">
+                                      <Bike size={10} /> Cycle
+                                    </span>
+                                  )}
+                                  {p.transitMode === 'driving' && (
+                                    <span className="flex items-center gap-1 bg-indigo-50 text-indigo-700 text-[9px] font-extrabold px-1.5 py-0.5 rounded-md border border-indigo-100">
+                                      <Car size={10} /> Drive
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Location / Destination Stats */}
+                              <div className="flex items-center justify-between mt-0.5">
+                                {destination && p.distanceToDestination !== undefined ? (
+                                  <>
+                                    {isArrived ? (
+                                      <span className="flex items-center gap-1.5 text-[10px] font-extrabold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-md border border-emerald-100">
+                                        <Sparkles size={11} className="text-emerald-500" /> Arrived
+                                      </span>
+                                    ) : (
+                                      <div className="flex items-center gap-1.5 flex-wrap">
+                                        {p.eta !== undefined && (
+                                          <span className="bg-slate-100 text-slate-700 text-[10px] font-bold px-1.5 py-0.5 rounded-md border border-slate-200">
+                                            {formatETA(p.eta, p.transitMode)}
+                                          </span>
+                                        )}
+                                        <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                                          {p.distanceToDestination.toFixed(1)} km away
+                                        </span>
+                                      </div>
+                                    )}
+                                  </>
+                                ) : (
+                                  <span className="text-[10px] text-slate-400 font-medium">
+                                    {p.lat ? 'Location shared' : 'Waiting for connection...'}
+                                  </span>
+                                )}
+
+                                {/* Actions: Locate or Kick */}
+                                <div className="flex items-center gap-1 opacity-0 group-hover/member:opacity-100 transition-opacity">
+                                  <Navigation size={11} className="text-slate-400 group-hover/member:text-indigo-600 transition-colors" />
+                                  {isHost && p.id !== user?.uid && (
+                                    <button 
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleKickUser(p.id);
+                                      }}
+                                      className="text-slate-300 hover:text-rose-600 p-0.5 transition-colors"
+                                      title="Remove User"
+                                    >
+                                      <UserMinus size={12} />
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Visual trip progress bar if en route */}
+                              {destination && p.distanceToDestination !== undefined && !isArrived && (
+                                <div className="w-full h-1 bg-slate-100 rounded-full overflow-hidden mt-1 opacity-80">
+                                  <div 
+                                    className="h-full rounded-full transition-all duration-300"
+                                    style={{ 
+                                      width: `${Math.max(10, Math.min(95, 100 - (p.distanceToDestination * 10)))}%`,
+                                      backgroundColor: userColor
+                                    }}
+                                  />
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <span className="bg-sky-50 text-[#0284C7] text-[11px] font-bold px-2 py-0.5 rounded-full">{participants.length}</span>
-              </div>
-              
-              <div className="flex-1 overflow-y-auto p-3 custom-scrollbar bg-[#F8FAFC]">
-                <div className="space-y-1">
-                  {participants.map((p) => (
-                    <div 
-                      key={p.id} 
-                      onClick={() => flyToUser(p.lat, p.lng)}
-                      className="flex items-center gap-3.5 p-2.5 rounded-[20px] bg-white border border-transparent hover:border-slate-200 hover:shadow-sm cursor-pointer transition-all"
-                    >
-                      <div className="relative shrink-0">
-                        <div className="w-10 h-10 rounded-full flex items-center justify-center text-white font-semibold text-[14px] border border-slate-200 overflow-hidden" style={{ backgroundColor: getUserColor(p.id) }}>
-                          {p.name.charAt(0).toUpperCase()}
-                        </div>
-                        <div className={`absolute bottom-0 right-0 w-3 h-3 ${p.isOnline !== false ? 'bg-[#10B981]' : 'bg-slate-300'} border-2 border-white rounded-full`}></div>
+
+                {/* Back Face: Trip Planner */}
+                <div 
+                  className={`absolute inset-0 w-full h-full flex flex-col [backface-visibility:hidden] [-webkit-backface-visibility:hidden] [transform:rotateY(180deg)] ${
+                    sidebarTab === 'planner' ? 'pointer-events-auto z-10' : 'pointer-events-none z-0'
+                  }`}
+                >
+                  <div className="bg-white border border-slate-200 shadow-sm rounded-3xl flex-1 min-h-0 flex flex-col overflow-hidden">
+                    <div className="p-5 border-b border-slate-100 flex items-center justify-between shrink-0 bg-white z-10">
+                      <div className="flex items-center gap-2">
+                        <MapPin size={16} className="text-[#0284C7]" />
+                        <p className="text-[14px] font-bold text-[#1E293B]">Trip Planner</p>
                       </div>
-                      <div className="flex-1 min-w-0 pr-2">
-                        <p className="font-semibold text-[14px] text-[#1E293B] truncate">
-                          {p.id === user?.uid ? `${p.name} (You)` : p.name}
-                        </p>
-                        {destination && p.distanceToDestination !== undefined ? (
-                          <p className="text-[12px] font-medium text-[#0284C7] mt-0.5 flex items-center gap-1.5">
-                            {p.eta !== undefined && (
-                              <span className="bg-sky-50 px-2 py-0.5 rounded-md border border-sky-100">{formatETA(p.eta)}</span>
-                            )}
-                            <span className={p.eta !== undefined ? "text-slate-400" : ""}>
-                              {p.eta !== undefined ? `(${p.distanceToDestination.toFixed(1)} km)` : `${p.distanceToDestination.toFixed(1)} km away`}
-                            </span>
-                          </p>
-                        ) : (
-                          <p className="text-[12px] text-[#64748B] truncate">
-                            {p.lat ? 'Location Shared' : 'Connecting...'}
-                          </p>
-                        )}
-                      </div>
-                      {isHost && p.id !== user?.uid && (
-                        <button onClick={() => handleKickUser(p.id)} className="w-8 h-8 rounded-full flex items-center justify-center text-slate-300 hover:bg-rose-50 hover:text-rose-600 transition-colors shrink-0" title="Remove User">
-                          <UserMinus size={16} />
-                        </button>
+                      {destination && (
+                        <span className="bg-rose-50 text-rose-600 text-[11px] font-bold px-2 py-0.5 rounded-full">Set</span>
                       )}
                     </div>
-                  ))}
+                    
+                    <div className="flex-1 overflow-y-auto p-5 custom-scrollbar bg-[#F8FAFC] flex flex-col gap-4">
+                      {isHost && (
+                        <div className="relative mb-1">
+                          <form onSubmit={handleSearch} className="relative">
+                            <input 
+                              type="text" 
+                              value={searchQuery} 
+                              onChange={(e) => setSearchQuery(e.target.value)} 
+                              placeholder="Search destination..." 
+                              className="w-full text-[13px] font-medium bg-white border border-slate-200 rounded-xl py-2.5 pl-3 pr-10 outline-none focus:bg-white focus:border-[#0284C7] focus:ring-2 focus:ring-[#0284C7]/10 transition-all text-[#1E293B] placeholder-[#94A3B8]"
+                            />
+                            <button type="submit" disabled={isSearching} className="absolute right-2 top-2 bottom-2 text-[#64748B] hover:text-[#0284C7] transition-colors disabled:opacity-50">
+                              {isSearching ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
+                            </button>
+                          </form>
+                          <button
+                            onClick={computeGravityCenter}
+                            disabled={isComputing || participants.length < 2}
+                            className="mt-2.5 w-full flex items-center justify-center gap-2 bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-600 hover:to-purple-600 text-white rounded-xl py-2.5 text-[13px] font-semibold transition-all disabled:opacity-50 disabled:grayscale shadow-[0_4px_12px_rgba(99,102,241,0.25)] border border-indigo-400/50 hover:shadow-[0_6px_16px_rgba(99,102,241,0.35)]"
+                            title="Calculate the exact midpoint of all members and find a venue"
+                          >
+                            {isComputing ? <Loader2 size={16} className="animate-spin" /> : <Zap size={16} />}
+                            Auto-Compute Gravity Center
+                          </button>
+
+                          {searchResults.length > 0 && (
+                            <div className="absolute top-full left-0 right-0 bg-white border border-slate-200 rounded-xl mt-1.5 max-h-48 overflow-y-auto z-30 shadow-[0_10px_25px_rgba(0,0,0,0.05)] custom-scrollbar">
+                              {searchResults.map((r, i) => (
+                                <div 
+                                  key={i} 
+                                  onClick={() => selectSearchResult(r)} 
+                                  className="p-3 text-[12px] font-medium text-[#475569] cursor-pointer hover:bg-sky-50 hover:text-[#0284C7] border-b border-slate-50 last:border-0 transition-colors line-clamp-2"
+                                >
+                                  {r.display_name}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      <div className={`rounded-[24px] p-5 border transition-all duration-300 ${destination ? 'bg-white border-slate-200 shadow-md' : 'bg-white border-slate-200 shadow-sm'}`}>
+                        {destination ? (
+                          <div className="flex flex-col text-left">
+                            <div className="flex items-center gap-2.5 mb-3">
+                              <div className="w-10 h-10 rounded-full bg-rose-50 border border-rose-100 flex items-center justify-center text-rose-500 shrink-0">
+                                <MapPin size={18} className="animate-pulse" />
+                              </div>
+                              <div className="min-w-0">
+                                <p className="text-[10px] font-bold text-rose-500 uppercase tracking-widest leading-none">Destination</p>
+                                <h4 className="text-[13px] font-bold text-slate-800 mt-1 truncate leading-tight">
+                                  {(destination as any).name ? (destination as any).name.split(':')[0] : 'Set Location'}
+                                </h4>
+                              </div>
+                            </div>
+                            
+                            {(destination as any).name && (
+                              <p className="text-[12px] font-medium text-slate-500 mb-3 px-1 leading-normal line-clamp-2" title={(destination as any).name}>
+                                {(destination as any).name}
+                              </p>
+                            )}
+
+                            {/* Coordinates badges */}
+                            <div className="flex items-center gap-2 mb-4 px-1">
+                              <span className="bg-slate-50 text-slate-500 text-[10px] font-mono font-bold px-2 py-1 rounded-md border border-slate-100">
+                                Lat: {destination.lat.toFixed(4)}
+                              </span>
+                              <span className="bg-slate-50 text-slate-500 text-[10px] font-mono font-bold px-2 py-1 rounded-md border border-slate-100">
+                                Lng: {destination.lng.toFixed(4)}
+                              </span>
+                            </div>
+
+                            {/* Action Buttons Grid */}
+                            <div className="flex flex-col gap-2">
+                              <div className="grid grid-cols-2 gap-2">
+                                <button 
+                                  onClick={() => flyToUser(destination.lat, destination.lng)} 
+                                  className="text-[11px] font-bold text-[#0284C7] bg-sky-50 hover:bg-sky-100 px-3 py-2.5 rounded-xl border border-sky-100/50 transition-colors shadow-xs inline-flex items-center justify-center gap-1.5 active:scale-[0.98]"
+                                >
+                                  <Navigation size={12} />
+                                  Locate Pin
+                                </button>
+                                <a
+                                  href={`https://www.google.com/maps/search/?api=1&query=${destination.lat},${destination.lng}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-[11px] font-bold text-slate-700 bg-slate-50 hover:bg-slate-100 px-3 py-2.5 rounded-xl border border-slate-200 transition-colors shadow-xs inline-flex items-center justify-center gap-1.5 active:scale-[0.98] no-underline"
+                                >
+                                  <ExternalLink size={12} />
+                                  Open in Maps
+                                </a>
+                              </div>
+
+                              {isHost && (
+                                <button
+                                  onClick={handleClearDestination}
+                                  className="w-full text-[11px] font-bold text-rose-600 bg-rose-50 hover:bg-rose-100 px-3 py-2.5 rounded-xl border border-rose-100 transition-colors shadow-xs inline-flex items-center justify-center gap-1.5 active:scale-[0.98] mt-1"
+                                >
+                                  <X size={12} />
+                                  Clear Destination
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex flex-col items-center justify-center text-center py-4">
+                            <div className="w-12 h-12 rounded-full bg-slate-50 border border-slate-100 flex items-center justify-center text-[#0284C7] mb-3">
+                              <Compass size={22} className="text-slate-400" />
+                            </div>
+                            <h4 className="font-bold text-[14px] text-slate-800">No Destination Set</h4>
+                            {isHost ? (
+                              <p className="text-[12px] font-medium text-slate-400 mt-1.5 max-w-[200px] leading-relaxed">Search above or click anywhere on the map to set a meeting spot.</p>
+                            ) : (
+                              <p className="text-[12px] font-medium text-slate-400 mt-1.5">Waiting for the Group Leader to choose a destination...</p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
-
           </div>
           
           {/* Center Column - Live Map */}
@@ -861,25 +1154,49 @@ export default function RoomPage() {
               </div>
               <button 
                 onClick={forceRefreshLocation}
-                className="bg-white/90 backdrop-blur-md px-2.5 py-1.5 rounded-full shadow-sm border border-slate-200 flex items-center gap-1.5 hover:bg-white transition-colors"
+                disabled={isRefreshing}
+                className="bg-white/90 backdrop-blur-md px-2.5 py-1.5 rounded-full shadow-sm border border-slate-200 flex items-center gap-1.5 hover:bg-white transition-colors disabled:opacity-70"
                 title="Force refresh my location"
               >
-                <RefreshCcw size={12} className="text-[#0284C7]" />
-                <span className="text-[12px] font-semibold text-[#1E293B]">Refresh</span>
+                <RefreshCcw size={12} className={`text-[#0284C7] ${isRefreshing ? 'animate-spin' : ''}`} />
+                <span className="text-[12px] font-semibold text-[#1E293B]">{isRefreshing ? 'Refreshing...' : 'Refresh'}</span>
               </button>
             </div>
           </div>
 
-          {/* Right Column - Chat Panel */}
-          {isChatOpen ? (
-            <div className="w-full lg:w-[340px] shrink-0 h-full hidden lg:block animate-in slide-in-from-right-4 fade-in">
-              {roomId && <ChatPanel roomId={roomId} isPermanent={true} onClose={() => setIsChatOpen(false)} />}
+          {/* Right Column - Chat Panel with smooth transition */}
+          <div 
+            className="hidden lg:block shrink-0 h-full relative transition-all duration-500 ease-[cubic-bezier(0.34,1.56,0.64,1)]"
+            style={{ width: isChatOpen ? '340px' : '58px' }}
+          >
+            {/* Chat Panel Wrapper */}
+            <div 
+              className={`absolute top-0 right-0 w-[340px] h-full transition-all duration-500 ease-[cubic-bezier(0.34,1.56,0.64,1)] origin-right ${
+                isChatOpen 
+                  ? 'opacity-100 scale-100 pointer-events-auto' 
+                  : 'opacity-0 scale-95 pointer-events-none'
+              }`}
+            >
+              {roomId && (
+                <ChatPanel 
+                  roomId={roomId} 
+                  isPermanent={true} 
+                  onClose={() => setIsChatOpen(false)} 
+                />
+              )}
             </div>
-          ) : (
-            <div className="hidden lg:flex flex-col justify-end pb-4 h-full shrink-0">
+
+            {/* Toggle Button Wrapper */}
+            <div 
+              className={`absolute bottom-4 right-0 w-[58px] h-[58px] transition-all duration-500 ease-[cubic-bezier(0.34,1.56,0.64,1)] ${
+                !isChatOpen 
+                  ? 'opacity-100 scale-100 pointer-events-auto' 
+                  : 'opacity-0 scale-90 pointer-events-none'
+              }`}
+            >
               <button 
                 onClick={() => setIsChatOpen(true)} 
-                className="bg-white border border-slate-200 shadow-sm p-4 rounded-3xl flex items-center justify-center text-[#0284C7] hover:bg-sky-50 transition-colors relative"
+                className="w-full h-full bg-white border border-slate-200 shadow-sm rounded-3xl flex items-center justify-center text-[#0284C7] hover:bg-sky-50 transition-colors relative active:scale-95"
                 title="Open Group Chat"
               >
                 <MessageCircle size={24} />
@@ -890,7 +1207,7 @@ export default function RoomPage() {
                 )}
               </button>
             </div>
-          )}
+          </div>
 
         </div>
 

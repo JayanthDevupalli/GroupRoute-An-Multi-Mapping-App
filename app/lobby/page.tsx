@@ -5,7 +5,27 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { useRoom } from '@/context/RoomContext';
 import ProtectedRoute from '@/components/ProtectedRoute';
-import { Plus, ArrowRight, Clock, MapPin, Navigation, Map } from 'lucide-react';
+import { 
+  Plus, 
+  ArrowRight, 
+  Clock, 
+  MapPin, 
+  Navigation, 
+  Map, 
+  Search, 
+  Trash2, 
+  CheckCircle2,
+  ChevronRight,
+  Car,
+  Bike,
+  Footprints,
+  Coffee,
+  Utensils,
+  Trees,
+  Briefcase,
+  Leaf,
+  Sparkles
+} from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { doc, getDoc, setDoc, deleteDoc, serverTimestamp, collection, query, orderBy, onSnapshot } from 'firebase/firestore';
 
@@ -14,6 +34,7 @@ interface RecentRoom {
   joinedAt: any;
   lastActive?: any;
   name?: string;
+  hostId?: string;
 }
 
 export default function DashboardPage() {
@@ -27,6 +48,32 @@ export default function DashboardPage() {
   const [joinError, setJoinError] = useState<string | null>(null);
   const [recentRooms, setRecentRooms] = useState<RecentRoom[]>([]);
   const [activeTab, setActiveTab] = useState<'create' | 'join'>('create');
+
+  // Search, Filter and Apple Settings
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterTab, setFilterTab] = useState<'all' | 'hosted' | 'joined'>('all');
+
+  // Travel & Transit Preferences State
+  const [transitMode, setTransitMode] = useState<'driving' | 'cycling' | 'walking'>('driving');
+  const [preferredCategory, setPreferredCategory] = useState<'cafes' | 'restaurants' | 'parks' | 'workspaces'>('cafes');
+
+  // Load preferences from localStorage
+  useEffect(() => {
+    const savedMode = localStorage.getItem('grouproute_transit_mode') as 'driving' | 'cycling' | 'walking' | null;
+    const savedCategory = localStorage.getItem('grouproute_preferred_category') as 'cafes' | 'restaurants' | 'parks' | 'workspaces' | null;
+    if (savedMode) setTransitMode(savedMode);
+    if (savedCategory) setPreferredCategory(savedCategory);
+  }, []);
+
+  const handleTransitModeChange = (mode: 'driving' | 'cycling' | 'walking') => {
+    setTransitMode(mode);
+    localStorage.setItem('grouproute_transit_mode', mode);
+  };
+
+  const handleCategoryChange = (category: 'cafes' | 'restaurants' | 'parks' | 'workspaces') => {
+    setPreferredCategory(category);
+    localStorage.setItem('grouproute_preferred_category', category);
+  };
 
   useEffect(() => {
     if (!user) return;
@@ -49,7 +96,8 @@ export default function DashboardPage() {
           if (roomSnap.exists()) {
             validRooms.push({
               ...r,
-              name: roomSnap.data().name || 'Unnamed Group'
+              name: roomSnap.data().name || 'Unnamed Group',
+              hostId: roomSnap.data().hostId
             });
           } else {
             // Clean up dead room references silently
@@ -142,200 +190,364 @@ export default function DashboardPage() {
     router.push(`/session`);
   };
 
+  const handleDeleteRecent = async (e: React.MouseEvent, roomId: string) => {
+    e.stopPropagation();
+    if (!user) return;
+    if (confirm("Remove this session log from your history?")) {
+      try {
+        await deleteDoc(doc(db, `users/${user.uid}/joinedRooms`, roomId));
+      } catch (err) {
+        console.error("Failed to delete log:", err);
+      }
+    }
+  };
+
+  // Filter logs logic
+  const filteredRooms = recentRooms.filter((room) => {
+    const matchesSearch = 
+      (room.name && room.name.toLowerCase().includes(searchQuery.toLowerCase())) || 
+      room.id.toLowerCase().includes(searchQuery.toLowerCase());
+    
+    if (!matchesSearch) return false;
+
+    if (filterTab === 'hosted') {
+      return room.hostId === user?.uid;
+    } else if (filterTab === 'joined') {
+      return room.hostId !== user?.uid;
+    }
+    return true;
+  });
+
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-slate-50 flex flex-col items-center relative font-sans pt-28 pb-20">
+      <div className="min-h-screen bg-[#F5F5F7] flex flex-col items-center relative font-sans pt-28 pb-20">
 
-        {/* Subtle Static Background */}
+        {/* Subtle Apple-style System grid overlay */}
         <div className="fixed top-0 left-0 w-full h-full pointer-events-none z-0">
-          <div className="absolute inset-0 opacity-[0.02]" style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z' fill='%23000000' fill-opacity='1'/%3E%3C/g%3E%3C/svg%3E")`, backgroundSize: '60px 60px' }} />
+          <div className="absolute inset-0 opacity-[0.015]" style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z' fill='%23000000' fill-opacity='1'/%3E%3C/g%3E%3C/svg%3E")`, backgroundSize: '60px 60px' }} />
         </div>
 
-        <div className="w-full max-w-7xl px-6 z-10 flex flex-col xl:flex-row gap-12 xl:gap-20 items-center xl:items-start justify-center">
+        <div className="w-full max-w-7xl px-4 md:px-6 z-10 grid grid-cols-1 lg:grid-cols-12 gap-8 items-start justify-center">
 
-          {/* LEFT COLUMN (Header + Form Card) */}
-          <div className="flex flex-col items-center xl:items-start w-full xl:w-[500px] shrink-0 xl:mt-8">
+          {/* LEFT COLUMN: Travel Profile & Quick Actions (4 Columns) */}
+          <div className="lg:col-span-4 flex flex-col gap-6 w-full lg:mt-8">
 
-            {/* Minimalist Logo Header */}
-            <div className="mb-10 flex flex-col items-center xl:items-start justify-center">
-              <div className="flex items-center gap-3 mb-2">
-                <div className="w-10 h-10 bg-gradient-to-tr from-sky-500 to-indigo-500 rounded-xl flex items-center justify-center text-white shadow-[0_4px_15px_rgba(99,102,241,0.3)]">
-                  <MapPin size={20} strokeWidth={2.5} />
+
+            {/* Travel Profile Card */}
+            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+              <div className="flex items-center gap-3.5">
+                <div className="w-11 h-11 rounded-full bg-slate-100 text-slate-800 font-bold flex items-center justify-center border border-slate-200 text-[15px]">
+                  {user?.displayName?.charAt(0).toUpperCase() || 'U'}
                 </div>
-                <h1 className="text-[24px] font-extrabold tracking-[-0.02em] text-[#1E293B]">
-                  GroupRouter
-                </h1>
-              </div>
-              <p className="text-[14px] font-medium text-[#64748B]">Meet in the middle.</p>
-            </div>
-
-            {/* Clean Professional Card */}
-            <div className="w-full max-w-xl z-20 relative mt-2">
-
-              <div className="bg-white border border-slate-200 shadow-xl shadow-slate-200/50 rounded-[32px] p-8 md:p-10 flex flex-col relative overflow-hidden">
-
-                {/* iOS Style Segmented Control */}
-                <div className="relative w-full h-[56px] bg-slate-100/80 backdrop-blur-md rounded-2xl p-1.5 flex items-center mb-8 shadow-inner z-10">
-                  <div
-                    className={`absolute top-1.5 bottom-1.5 w-[calc(50%-6px)] bg-white rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.08)] transition-transform duration-300 ease-out`}
-                    style={{ transform: activeTab === 'create' ? 'translateX(0)' : 'translateX(100%)' }}
-                  />
-
-                  <button
-                    onClick={() => setActiveTab('create')}
-                    className={`flex-1 h-full rounded-xl font-bold text-[15px] z-10 transition-colors duration-300 ${activeTab === 'create' ? 'text-[#1E293B]' : 'text-[#64748B] hover:text-[#1E293B]'}`}
-                  >
-                    Start New
-                  </button>
-                  <button
-                    onClick={() => setActiveTab('join')}
-                    className={`flex-1 h-full rounded-xl font-bold text-[15px] z-10 transition-colors duration-300 ${activeTab === 'join' ? 'text-[#1E293B]' : 'text-[#64748B] hover:text-[#1E293B]'}`}
-                  >
-                    Join Existing
-                  </button>
-                </div>
-
-                {/* Dynamic Content Area */}
-                <div className="relative z-10 min-h-[220px]">
-
-                  {/* CREATE TAB */}
-                  {activeTab === 'create' && (
-                    <div className="animate-in fade-in zoom-in-95 duration-300 flex flex-col h-full">
-                      <div className="flex items-center gap-4 mb-6">
-                        <div className="w-12 h-12 bg-gradient-to-br from-sky-100 to-sky-50 text-[#0284C7] border border-sky-100 rounded-2xl flex items-center justify-center shadow-sm shrink-0">
-                          <Navigation size={24} className="rotate-45" strokeWidth={2} />
-                        </div>
-                        <div>
-                          <h3 className="text-[22px] font-extrabold tracking-[-0.02em] text-[#1E293B]">Create Map Room</h3>
-                          <p className="text-[14px] font-medium text-[#64748B]">Generate a secure session token.</p>
-                        </div>
-                      </div>
-
-                      <div className="mt-auto flex flex-col gap-4">
-                        <input
-                          type="text"
-                          placeholder="Group Name (e.g. Weekend Trip)"
-                          value={groupName}
-                          onChange={(e) => setGroupName(e.target.value)}
-                          className="w-full h-[60px] px-6 text-[16px] font-semibold bg-white border-2 border-slate-100 rounded-2xl outline-none focus:bg-white focus:border-[#0284C7] focus:ring-4 focus:ring-[#0284C7]/10 transition-all text-[#1E293B] placeholder-[#94A3B8] shadow-sm"
-                        />
-                        <button
-                          onClick={handleCreateRoom}
-                          disabled={isCreating}
-                          className="w-full h-[60px] bg-gradient-to-r from-[#0284C7] to-[#0369A1] hover:from-[#0369A1] hover:to-[#075985] text-white rounded-2xl font-bold text-[16px] tracking-wide transition-all flex items-center justify-center gap-2 disabled:opacity-50 shadow-[0_8px_20px_rgba(2,132,199,0.25)] hover:shadow-[0_8px_25px_rgba(2,132,199,0.35)]"
-                        >
-                          {isCreating ? 'Creating...' : 'Launch Session'}
-                          {!isCreating && <ArrowRight size={18} />}
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* JOIN TAB */}
-                  {activeTab === 'join' && (
-                    <div className="animate-in fade-in zoom-in-95 duration-300 flex flex-col h-full">
-                      <div className="flex items-center gap-4 mb-6">
-                        <div className="w-12 h-12 bg-gradient-to-br from-indigo-100 to-indigo-50 text-indigo-600 border border-indigo-100 rounded-2xl flex items-center justify-center shadow-sm shrink-0">
-                          <Map size={24} strokeWidth={2} />
-                        </div>
-                        <div>
-                          <h3 className="text-[22px] font-extrabold tracking-[-0.02em] text-[#1E293B]">Join Map Room</h3>
-                          <p className="text-[14px] font-medium text-[#64748B]">Enter the 6-digit access code.</p>
-                        </div>
-                      </div>
-
-                      <form onSubmit={handleJoinRoom} className="mt-auto flex flex-col gap-4 relative">
-                        <input
-                          type="text"
-                          placeholder="CODE"
-                          value={joinCode}
-                          onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
-                          maxLength={6}
-                          className="w-full h-[60px] px-6 text-[22px] tracking-[0.3em] font-black uppercase bg-white border-2 border-slate-100 rounded-2xl outline-none focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/20 transition-all text-[#1E293B] placeholder-[#CBD5E1] shadow-sm text-center"
-                          required
-                        />
-                        <button
-                          type="submit"
-                          disabled={joinCode.length !== 6}
-                          className="w-full h-[60px] bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-bold text-[16px] flex items-center justify-center transition-all disabled:opacity-30 disabled:hover:bg-indigo-600 shadow-[0_8px_20px_rgba(79,70,229,0.25)] hover:shadow-[0_8px_25px_rgba(79,70,229,0.35)]"
-                        >
-                          Enter Map
-                        </button>
-
-                        {joinError && (
-                          <div className="absolute top-full left-0 right-0 mt-3 text-center text-rose-500 text-[13px] font-bold">
-                            {joinError}
-                          </div>
-                        )}
-                      </form>
-                    </div>
-                  )}
-
+                <div>
+                  <p className="text-[12px] font-semibold text-slate-400 uppercase tracking-wider leading-none">Traveler Profile</p>
+                  <h3 className="text-[16px] font-bold text-slate-900 mt-1 leading-tight">{user?.displayName || 'Welcome Back'}</h3>
                 </div>
               </div>
             </div>
+
+            {/* Travel & Transit Preferences Card */}
+            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm transition-all duration-300 hover:shadow-[0_8px_30px_rgba(0,0,0,0.02)]">
+              <h3 className="text-[14px] font-bold text-slate-900 mb-1.5 flex items-center gap-2">
+                <Sparkles size={15} className="text-indigo-500 animate-pulse" />
+                Travel Preferences
+              </h3>
+              <p className="text-[11px] text-slate-500 font-medium mb-3.5 leading-relaxed">
+                Choose your default transit type and destination category for meeting.
+              </p>
+
+              {/* Transit Mode Selection (Custom Segmented Control) */}
+              <div className="flex flex-col gap-2 mb-4">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider leading-none">Transit Mode</span>
+                <div className="grid grid-cols-3 bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs gap-1">
+                  <button
+                    onClick={() => handleTransitModeChange('driving')}
+                    className={`flex flex-col sm:flex-row items-center justify-center gap-1.5 py-2 px-1 rounded-lg font-bold transition-all ${transitMode === 'driving' ? 'bg-white text-slate-900 shadow-sm border border-slate-200/25' : 'text-slate-500 hover:text-slate-800'}`}
+                  >
+                    <Car size={13} className={transitMode === 'driving' ? 'text-indigo-600' : 'text-slate-400'} />
+                    <span className="text-[10px] sm:text-xs">Drive</span>
+                  </button>
+                  <button
+                    onClick={() => handleTransitModeChange('cycling')}
+                    className={`flex flex-col sm:flex-row items-center justify-center gap-1.5 py-2 px-1 rounded-lg font-bold transition-all ${transitMode === 'cycling' ? 'bg-white text-slate-900 shadow-sm border border-slate-200/25' : 'text-slate-500 hover:text-slate-800'}`}
+                  >
+                    <Bike size={13} className={transitMode === 'cycling' ? 'text-indigo-600' : 'text-slate-400'} />
+                    <span className="text-[10px] sm:text-xs">Cycle</span>
+                  </button>
+                  <button
+                    onClick={() => handleTransitModeChange('walking')}
+                    className={`flex flex-col sm:flex-row items-center justify-center gap-1.5 py-2 px-1 rounded-lg font-bold transition-all ${transitMode === 'walking' ? 'bg-white text-slate-900 shadow-sm border border-slate-200/25' : 'text-slate-500 hover:text-slate-800'}`}
+                  >
+                    <Footprints size={13} className={transitMode === 'walking' ? 'text-indigo-600' : 'text-slate-400'} />
+                    <span className="text-[10px] sm:text-xs">Walk</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Preferred Venue Category (Custom Icons & Buttons) */}
+              <div className="flex flex-col gap-2">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider leading-none">Default Category</span>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => handleCategoryChange('cafes')}
+                    className={`flex items-center gap-2 p-2.5 rounded-xl border text-left transition-all ${preferredCategory === 'cafes' ? 'bg-indigo-50/50 border-indigo-200 text-indigo-900' : 'bg-slate-50/40 border-slate-200/70 hover:bg-slate-50 text-slate-600'}`}
+                  >
+                    <Coffee size={14} className={preferredCategory === 'cafes' ? 'text-indigo-600' : 'text-slate-400'} />
+                    <span className="text-[11px] font-bold">Cafes</span>
+                  </button>
+                  <button
+                    onClick={() => handleCategoryChange('restaurants')}
+                    className={`flex items-center gap-2 p-2.5 rounded-xl border text-left transition-all ${preferredCategory === 'restaurants' ? 'bg-indigo-50/50 border-indigo-200 text-indigo-900' : 'bg-slate-50/40 border-slate-200/70 hover:bg-slate-50 text-slate-600'}`}
+                  >
+                    <Utensils size={14} className={preferredCategory === 'restaurants' ? 'text-indigo-600' : 'text-slate-400'} />
+                    <span className="text-[11px] font-bold">Dine Out</span>
+                  </button>
+                  <button
+                    onClick={() => handleCategoryChange('parks')}
+                    className={`flex items-center gap-2 p-2.5 rounded-xl border text-left transition-all ${preferredCategory === 'parks' ? 'bg-indigo-50/50 border-indigo-200 text-indigo-900' : 'bg-slate-50/40 border-slate-200/70 hover:bg-slate-50 text-slate-600'}`}
+                  >
+                    <Trees size={14} className={preferredCategory === 'parks' ? 'text-indigo-600' : 'text-slate-400'} />
+                    <span className="text-[11px] font-bold">Parks</span>
+                  </button>
+                  <button
+                    onClick={() => handleCategoryChange('workspaces')}
+                    className={`flex items-center gap-2 p-2.5 rounded-xl border text-left transition-all ${preferredCategory === 'workspaces' ? 'bg-indigo-50/50 border-indigo-200 text-indigo-900' : 'bg-slate-50/40 border-slate-200/70 hover:bg-slate-50 text-slate-600'}`}
+                  >
+                    <Briefcase size={14} className={preferredCategory === 'workspaces' ? 'text-indigo-600' : 'text-slate-400'} />
+                    <span className="text-[11px] font-bold">Office</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
           </div>
 
-          {/* RIGHT COLUMN (Recent Sessions List) */}
-          <div className="flex-1 w-full max-w-3xl xl:mt-8">
-            {recentRooms.length > 0 && (
-              <div className="w-full animate-in fade-in slide-in-from-bottom-4 duration-700">
-                <div className="flex items-center justify-between mb-6">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full bg-slate-200/50 flex items-center justify-center text-[#475569]">
-                      <Clock size={16} />
+          {/* RIGHT COLUMN: Map Room Actions & Recent Rooms Grid (8 Columns) */}
+          <div className="lg:col-span-8 flex flex-col gap-6 w-full lg:mt-8">
+            
+            {/* Control Panel (Start New / Join Existing) */}
+            <div className="bg-white border border-slate-200 shadow-sm rounded-2xl p-6 md:p-8 flex flex-col relative overflow-hidden">
+              
+              {/* iOS Style Segmented Control */}
+              <div className="relative w-full h-[50px] bg-slate-100 rounded-xl p-1 flex items-center mb-6 border border-slate-200 z-10">
+                <div
+                  className="absolute top-1 bottom-1 w-[calc(50%-4px)] bg-white rounded-lg shadow-sm border border-slate-200 transition-all duration-300 ease-out"
+                  style={{ transform: activeTab === 'create' ? 'translateX(0)' : 'translateX(100%)' }}
+                />
+
+                <button
+                  onClick={() => setActiveTab('create')}
+                  className={`flex-1 h-full rounded-lg font-bold text-[14px] z-10 transition-colors duration-200 ${activeTab === 'create' ? 'text-slate-900' : 'text-slate-500 hover:text-slate-800'}`}
+                >
+                  Start New
+                </button>
+                <button
+                  onClick={() => setActiveTab('join')}
+                  className={`flex-1 h-full rounded-lg font-bold text-[14px] z-10 transition-colors duration-200 ${activeTab === 'join' ? 'text-slate-900' : 'text-slate-500 hover:text-slate-800'}`}
+                >
+                  Join Existing
+                </button>
+              </div>
+
+              {/* Dynamic Content Area */}
+              <div className="relative z-10 min-h-[160px] flex flex-col justify-between">
+
+                {/* CREATE TAB */}
+                {activeTab === 'create' && (
+                  <div className="animate-in fade-in zoom-in-95 duration-200 flex flex-col justify-between h-full flex-grow">
+                    <div>
+                      <div className="flex items-center gap-4 mb-4">
+                        <div className="w-12 h-12 bg-slate-100 text-slate-700 border border-slate-200 rounded-xl flex items-center justify-center shrink-0">
+                          <Navigation size={22} className="rotate-45" strokeWidth={2} />
+                        </div>
+                        <div>
+                          <h3 className="text-[18px] font-extrabold tracking-[-0.02em] text-slate-900">Create Map Room</h3>
+                          <p className="text-[13px] font-medium text-slate-500">Generate a secure session token.</p>
+                        </div>
+                      </div>
                     </div>
-                    <h3 className="text-[18px] font-bold text-[#1E293B] tracking-tight">Recent Travel Logs</h3>
+
+                    <div className="flex flex-col gap-4 mt-2">
+                      <input
+                        type="text"
+                        placeholder="Group Name (e.g. Weekend Trip)"
+                        value={groupName}
+                        onChange={(e) => setGroupName(e.target.value)}
+                        className="w-full h-[52px] px-4 text-[15px] font-medium bg-slate-50 border border-slate-200 rounded-xl outline-none focus:bg-white focus:border-indigo-600 focus:ring-4 focus:ring-indigo-100 transition-all text-slate-900 placeholder-slate-400"
+                      />
+                      <button
+                        onClick={handleCreateRoom}
+                        disabled={isCreating}
+                        className="w-full h-[52px] bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-semibold text-[15px] transition-all flex items-center justify-center gap-2 disabled:opacity-50 active:scale-[0.98] shadow-sm"
+                      >
+                        {isCreating ? 'Creating...' : 'Launch Session'}
+                        {!isCreating && <ArrowRight size={16} />}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* JOIN TAB */}
+                {activeTab === 'join' && (
+                  <div className="animate-in fade-in zoom-in-95 duration-200 flex flex-col justify-between h-full flex-grow">
+                    <div>
+                      <div className="flex items-center gap-4 mb-4">
+                        <div className="w-12 h-12 bg-slate-100 text-slate-700 border border-slate-200 rounded-xl flex items-center justify-center shrink-0">
+                          <Map size={22} strokeWidth={2} />
+                        </div>
+                        <div>
+                          <h3 className="text-[18px] font-extrabold tracking-[-0.02em] text-slate-900">Join Map Room</h3>
+                          <p className="text-[13px] font-medium text-slate-500">Enter the 6-digit access code.</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <form onSubmit={handleJoinRoom} className="flex flex-col gap-4 mt-2 relative">
+                      <input
+                        type="text"
+                        placeholder="CODE"
+                        value={joinCode}
+                        onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
+                        maxLength={6}
+                        className="w-full h-[52px] px-4 text-[20px] tracking-[0.3em] font-bold uppercase bg-slate-50 border border-slate-200 rounded-xl outline-none focus:bg-white focus:border-indigo-600 focus:ring-4 focus:ring-indigo-100 transition-all text-slate-900 placeholder-slate-300 text-center"
+                        required
+                      />
+                      <button
+                        type="submit"
+                        disabled={joinCode.length !== 6}
+                        className="w-full h-[52px] bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-semibold text-[15px] flex items-center justify-center transition-all disabled:opacity-30 active:scale-[0.98] shadow-sm"
+                      >
+                        Enter Map
+                      </button>
+
+                      {joinError && (
+                        <div className="absolute top-full left-0 right-0 mt-2 text-center text-rose-600 text-[13px] font-semibold">
+                          {joinError}
+                        </div>
+                      )}
+                    </form>
+                  </div>
+                )}
+
+              </div>
+            </div>
+
+            {/* Travel Logs and List Panel */}
+            {recentRooms.length > 0 && (
+              <div className="w-full bg-white border border-slate-200/80 shadow-sm rounded-2xl p-6 flex flex-col gap-5">
+                
+                {/* Search & Filter Header */}
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-100">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-7 h-7 rounded-lg bg-slate-100 flex items-center justify-center text-slate-700">
+                      <Clock size={14} />
+                    </div>
+                    <h3 className="text-[16px] font-bold text-slate-900 tracking-tight">Recent Travel Logs</h3>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                    {/* Search Field */}
+                    <div className="relative">
+                      <Search size={14} className="absolute left-3 top-3 text-slate-400" />
+                      <input
+                        type="text"
+                        placeholder="Search logs..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="w-full sm:w-44 text-xs font-semibold bg-slate-50 border border-slate-200 rounded-lg py-2 pl-8 pr-3 outline-none focus:bg-white focus:border-indigo-500 focus:w-48 transition-all placeholder-slate-400 text-slate-800"
+                      />
+                    </div>
+
+                    {/* Filter Segmented Pills */}
+                    <div className="flex bg-slate-100 p-0.5 rounded-lg border border-slate-200 text-xs">
+                      <button
+                        onClick={() => setFilterTab('all')}
+                        className={`px-3 py-1.5 rounded-md font-bold transition-all ${filterTab === 'all' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+                      >
+                        All
+                      </button>
+                      <button
+                        onClick={() => setFilterTab('hosted')}
+                        className={`px-3 py-1.5 rounded-md font-bold transition-all ${filterTab === 'hosted' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+                      >
+                        Hosted
+                      </button>
+                      <button
+                        onClick={() => setFilterTab('joined')}
+                        className={`px-3 py-1.5 rounded-md font-bold transition-all ${filterTab === 'joined' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+                      >
+                        Joined
+                      </button>
+                    </div>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-                  {recentRooms.map((room) => {
-                    const isRecent = room.joinedAt?.toMillis() > Date.now() - 24 * 60 * 60 * 1000; // Less than 24h
-                    return (
-                      <div
-                        key={room.id}
-                        onClick={() => handleRejoin(room.id)}
-                        className="group bg-white border border-slate-200 rounded-3xl p-1 cursor-pointer shadow-sm hover:shadow-[0_10px_30px_rgba(0,0,0,0.06)] hover:-translate-y-1 transition-all overflow-hidden relative"
-                      >
-                        {/* Ticket Header */}
-                        <div className="bg-[#F8FAFC] rounded-[20px] p-4 flex items-start justify-between border-b border-slate-200/50 border-dashed relative">
-                          {/* Cutouts for ticket effect */}
-                          <div className="absolute -bottom-2 -left-2 w-4 h-4 bg-white rounded-full border-t border-r border-slate-200"></div>
-                          <div className="absolute -bottom-2 -right-2 w-4 h-4 bg-white rounded-full border-t border-l border-slate-200"></div>
-
-                          <div className="flex flex-col">
-                            <span className="text-[10px] font-bold text-[#64748B] uppercase tracking-[0.2em] mb-1">Token: {room.id}</span>
-                            <h4 className="text-[18px] font-black text-[#1E293B] tracking-tight truncate max-w-[180px]">{room.name || room.id}</h4>
-                          </div>
-                          {isRecent && (
-                            <div className="flex items-center gap-1.5 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-100">
-                              <span className="relative flex h-2 w-2">
-                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                {/* Grid list of Travel Logs */}
+                {filteredRooms.length === 0 ? (
+                  <div className="text-center py-10 flex flex-col items-center justify-center">
+                    <p className="text-slate-400 font-semibold text-[13px]">No matching travel logs found</p>
+                    <button onClick={() => { setSearchQuery(''); setFilterTab('all'); }} className="mt-2 text-xs font-bold text-indigo-600 hover:underline">
+                      Clear filters
+                    </button>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {filteredRooms.map((room) => {
+                      const isRecent = room.joinedAt?.toMillis() > Date.now() - 24 * 60 * 60 * 1000;
+                      const isHostedByMe = room.hostId === user?.uid;
+                      
+                      return (
+                        <div
+                          key={room.id}
+                          onClick={() => handleRejoin(room.id)}
+                          className="group bg-slate-50/50 border border-slate-200 hover:border-slate-300 hover:bg-white rounded-xl p-4.5 cursor-pointer shadow-sm hover:shadow-md transition-all duration-200 relative flex flex-col justify-between h-[135px]"
+                        >
+                          <div>
+                            <div className="flex items-center justify-between gap-2 mb-1.5">
+                              <span className="text-[10px] font-mono font-bold bg-slate-100 text-slate-650 px-2 py-0.5 rounded border border-slate-200 uppercase tracking-wider">
+                                Token: {room.id}
                               </span>
-                              <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider">Live</span>
-                            </div>
-                          )}
-                        </div>
+                              
+                              <div className="flex items-center gap-1.5">
+                                {/* Hosted / Joined Pill */}
+                                <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${isHostedByMe ? 'bg-indigo-50 border border-indigo-200 text-indigo-700' : 'bg-slate-100 border border-slate-200 text-slate-650'}`}>
+                                  {isHostedByMe ? 'Host' : 'Joined'}
+                                </span>
 
-                        {/* Ticket Body */}
-                        <div className="p-4 flex items-center justify-between">
-                          <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-full flex items-center justify-center shrink-0 group-hover:bg-indigo-600 group-hover:text-white transition-colors">
-                              <MapPin size={18} />
+                                {/* Active status */}
+                                {isRecent && (
+                                  <span className="inline-flex items-center gap-1 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full text-[9px] font-bold text-emerald-700 uppercase">
+                                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                                    Active
+                                  </span>
+                                )}
+
+                                {/* Delete log */}
+                                <button
+                                  onClick={(e) => handleDeleteRecent(e, room.id)}
+                                  className="text-slate-400 hover:text-rose-600 p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                                  title="Delete Log"
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              </div>
                             </div>
-                            <div className="flex flex-col">
-                              <span className="text-[13px] font-semibold text-[#1E293B] group-hover:text-indigo-600 transition-colors">Resume Route</span>
-                              <span className="text-[11px] font-medium text-[#64748B] mt-0.5">Click to enter map</span>
-                            </div>
+                            <h4 className="text-[15px] font-bold text-slate-800 tracking-tight mt-1 truncate pr-4">
+                              {room.name || room.id}
+                            </h4>
                           </div>
-                          <ArrowRight size={16} className="text-[#94A3B8] group-hover:translate-x-1 transition-transform group-hover:text-indigo-600" />
+
+                          <div className="flex items-center justify-between pt-2.5 border-t border-slate-250">
+                            <span className="text-[12px] font-semibold text-slate-500 group-hover:text-indigo-600 transition-colors flex items-center gap-1.5">
+                              Resume Session
+                            </span>
+                            <ChevronRight size={15} className="text-slate-400 group-hover:translate-x-0.5 group-hover:text-indigo-600 transition-all" />
+                          </div>
                         </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             )}
           </div>
