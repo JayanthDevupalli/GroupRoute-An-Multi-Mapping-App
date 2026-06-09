@@ -5,15 +5,15 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { useRoom } from '@/context/RoomContext';
 import ProtectedRoute from '@/components/ProtectedRoute';
-import { 
-  Plus, 
-  ArrowRight, 
-  Clock, 
-  MapPin, 
-  Navigation, 
-  Map, 
-  Search, 
-  Trash2, 
+import {
+  Plus,
+  ArrowRight,
+  Clock,
+  MapPin,
+  Navigation,
+  Map,
+  Search,
+  Trash2,
   CheckCircle2,
   ChevronRight,
   Car,
@@ -26,7 +26,8 @@ import {
   Leaf,
   Sparkles,
   Users,
-  UserPlus
+  UserPlus,
+  EyeOff
 } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { doc, getDoc, setDoc, deleteDoc, serverTimestamp, collection, query, orderBy, onSnapshot } from 'firebase/firestore';
@@ -66,13 +67,16 @@ export default function DashboardPage() {
   // Travel & Transit Preferences State
   const [transitMode, setTransitMode] = useState<'driving' | 'cycling' | 'walking'>('driving');
   const [preferredCategory, setPreferredCategory] = useState<'cafes' | 'restaurants' | 'parks' | 'workspaces'>('cafes');
+  const [ghostMode, setGhostMode] = useState(false);
 
   // Load preferences from localStorage
   useEffect(() => {
     const savedMode = localStorage.getItem('grouproute_transit_mode') as 'driving' | 'cycling' | 'walking' | null;
     const savedCategory = localStorage.getItem('grouproute_preferred_category') as 'cafes' | 'restaurants' | 'parks' | 'workspaces' | null;
+    const savedGhostMode = localStorage.getItem('grouproute_ghost_mode') === 'true';
     if (savedMode) setTransitMode(savedMode);
     if (savedCategory) setPreferredCategory(savedCategory);
+    setGhostMode(savedGhostMode);
   }, []);
 
   const handleTransitModeChange = (mode: 'driving' | 'cycling' | 'walking') => {
@@ -83,6 +87,12 @@ export default function DashboardPage() {
   const handleCategoryChange = (category: 'cafes' | 'restaurants' | 'parks' | 'workspaces') => {
     setPreferredCategory(category);
     localStorage.setItem('grouproute_preferred_category', category);
+  };
+
+  const handleGhostModeToggle = () => {
+    const newMode = !ghostMode;
+    setGhostMode(newMode);
+    localStorage.setItem('grouproute_ghost_mode', newMode.toString());
   };
 
   // Fetch Friends
@@ -263,10 +273,10 @@ export default function DashboardPage() {
 
   // Filter logs logic
   const filteredRooms = recentRooms.filter((room) => {
-    const matchesSearch = 
-      (room.name && room.name.toLowerCase().includes(searchQuery.toLowerCase())) || 
+    const matchesSearch =
+      (room.name && room.name.toLowerCase().includes(searchQuery.toLowerCase())) ||
       room.id.toLowerCase().includes(searchQuery.toLowerCase());
-    
+
     if (!matchesSearch) return false;
 
     if (filterTab === 'hosted') {
@@ -349,10 +359,10 @@ export default function DashboardPage() {
 
           {/* CENTER COLUMN: Map Room Actions & Recent Rooms Grid (6 Columns) */}
           <div className="lg:col-span-6 flex flex-col gap-6 w-full lg:mt-8 lg:order-2 order-1">
-            
+
             {/* Control Panel (Start New / Join Existing) */}
             <div className="bg-white border border-slate-200 shadow-sm rounded-2xl p-6 md:p-8 flex flex-col relative overflow-hidden">
-              
+
               {/* iOS Style Segmented Control */}
               <div className="relative w-full h-[50px] bg-slate-100 rounded-xl p-1 flex items-center mb-6 border border-slate-200 z-10">
                 <div
@@ -457,163 +467,7 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {/* Travel Logs and List Panel */}
-            {recentRooms.length > 0 && (
-              <div className="w-full bg-white border border-slate-200/80 shadow-sm rounded-2xl p-6 flex flex-col gap-5">
-                
-                {/* Search & Filter Header */}
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-100">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-7 h-7 rounded-lg bg-slate-100 flex items-center justify-center text-slate-700">
-                      <Clock size={14} />
-                    </div>
-                    <h3 className="text-[16px] font-bold text-slate-900 tracking-tight">Recent Travel Logs</h3>
-                  </div>
-
-                  <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-                    {/* Search Field */}
-                    <div className="relative">
-                      <Search size={14} className="absolute left-3 top-3 text-slate-400" />
-                      <input
-                        type="text"
-                        placeholder="Search logs..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        className="w-full sm:w-44 text-xs font-semibold bg-slate-50 border border-slate-200 rounded-lg py-2 pl-8 pr-3 outline-none focus:bg-white focus:border-indigo-500 focus:w-48 transition-all placeholder-slate-400 text-slate-800"
-                      />
-                    </div>
-
-                    {/* Filter Segmented Pills */}
-                    <div className="flex bg-slate-100 p-0.5 rounded-lg border border-slate-200 text-xs">
-                      <button
-                        onClick={() => setFilterTab('all')}
-                        className={`px-3 py-1.5 rounded-md font-bold transition-all ${filterTab === 'all' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
-                      >
-                        All
-                      </button>
-                      <button
-                        onClick={() => setFilterTab('hosted')}
-                        className={`px-3 py-1.5 rounded-md font-bold transition-all ${filterTab === 'hosted' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
-                      >
-                        Hosted
-                      </button>
-                      <button
-                        onClick={() => setFilterTab('joined')}
-                        className={`px-3 py-1.5 rounded-md font-bold transition-all ${filterTab === 'joined' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
-                      >
-                        Joined
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Grid list of Travel Logs */}
-                {filteredRooms.length === 0 ? (
-                  <div className="text-center py-10 flex flex-col items-center justify-center">
-                    <p className="text-slate-400 font-semibold text-[13px]">No matching travel logs found</p>
-                    <button onClick={() => { setSearchQuery(''); setFilterTab('all'); }} className="mt-2 text-xs font-bold text-indigo-600 hover:underline">
-                      Clear filters
-                    </button>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 gap-4 mt-4">
-                    {filteredRooms.map((room) => {
-                      const isRecent = room.joinedAt?.toMillis() > Date.now() - 24 * 60 * 60 * 1000;
-                      const isHostedByMe = room.hostId === user?.uid;
-                      const dateJoined = room.joinedAt ? new Date(room.joinedAt.toMillis()).toLocaleDateString() : 'Unknown';
-                      
-                      return (
-                        <div
-                          key={room.id}
-                          onClick={() => handleRejoin(room.id)}
-                          className="group relative bg-white border border-indigo-100/50 rounded-2xl cursor-pointer shadow-[0_2px_10px_rgba(0,0,0,0.02)] hover:shadow-[0_8px_30px_rgba(79,70,229,0.08)] hover:border-indigo-200 transition-all duration-300 overflow-hidden flex items-center p-4 min-h-[90px]"
-                        >
-                          {/* Right side ripple background */}
-                          <div className="absolute right-20 top-1/2 -translate-y-1/2 w-[200px] h-[200px] pointer-events-none overflow-hidden flex items-center justify-center opacity-30 group-hover:opacity-60 transition-opacity">
-                            <div className="absolute w-[80px] h-[80px] rounded-full border border-slate-200"></div>
-                            <div className="absolute w-[140px] h-[140px] rounded-full border border-slate-200"></div>
-                            <div className="absolute w-[200px] h-[200px] rounded-full border border-slate-200"></div>
-                          </div>
-
-                          {/* Content */}
-                          <div className="relative z-10 flex items-center justify-between w-full">
-                            
-                            {/* Left: Icon & Text */}
-                            <div className="flex items-center gap-4">
-                              <div className="w-[52px] h-[52px] rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 group-hover:scale-105 transition-transform shrink-0">
-                                <MapPin size={22} strokeWidth={2.5} />
-                              </div>
-                              <div className="flex flex-col gap-1">
-                                <h4 className="text-[17px] font-extrabold text-slate-800 tracking-tight group-hover:text-indigo-900 transition-colors">
-                                  {room.name || 'Unnamed Trip'}
-                                </h4>
-                                <div className="flex items-center gap-2">
-                                  <span className="text-[11px] font-bold bg-slate-100 text-slate-600 px-2 py-0.5 rounded-md uppercase tracking-wider">
-                                    {room.id}
-                                  </span>
-                                  <span className="text-slate-300 text-[10px]">●</span>
-                                  <span className="text-[12px] font-semibold text-slate-500">
-                                    {dateJoined}
-                                  </span>
-                                </div>
-                              </div>
-                            </div>
-
-                            {/* Right: Avatars, Status, Actions */}
-                            <div className="flex items-center gap-6">
-                              
-                              {/* Avatars */}
-                              <div className="flex items-center -space-x-2">
-                                <div className="w-8 h-8 rounded-full border-2 border-white bg-slate-100 flex items-center justify-center text-[11px] font-bold text-slate-700 shadow-sm z-20">
-                                  {user?.displayName?.charAt(0).toUpperCase() || 'U'}
-                                </div>
-                                <div className="w-8 h-8 rounded-full border-2 border-white bg-indigo-50 flex items-center justify-center text-[14px] font-bold text-indigo-600 shadow-sm z-10">
-                                  +
-                                </div>
-                              </div>
-
-                              {/* Status & Resume */}
-                              <div className="flex flex-col items-center gap-1.5 w-[75px]">
-                                {isRecent ? (
-                                  <span className="inline-flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full text-[10px] font-bold text-emerald-600 uppercase tracking-wide w-full justify-center">
-                                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                                    Active
-                                  </span>
-                                ) : (
-                                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold tracking-wide w-full justify-center uppercase ${isHostedByMe ? 'bg-indigo-50 border border-indigo-100 text-indigo-600' : 'bg-slate-50 border border-slate-200 text-slate-500'}`}>
-                                    {isHostedByMe ? 'Hosted' : 'Joined'}
-                                  </span>
-                                )}
-                                
-                                <div className="flex items-center gap-1 text-[12px] font-bold text-indigo-600 opacity-90 group-hover:opacity-100">
-                                  Resume <ChevronRight size={14} strokeWidth={3} className="group-hover:translate-x-0.5 transition-transform" />
-                                </div>
-                              </div>
-                              
-                              {/* Delete */}
-                              <button
-                                onClick={(e) => handleDeleteRecent(e, room.id)}
-                                className="text-slate-300 hover:text-rose-500 p-2 transition-colors rounded-lg hover:bg-rose-50"
-                                title="Delete Log"
-                              >
-                                <Trash2 size={18} strokeWidth={1.5} />
-                              </button>
-
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
-        
-          {/* RIGHT COLUMN: Travel Preferences (3 Columns) */}
-          <div className="lg:col-span-3 flex flex-col gap-6 w-full lg:mt-8 lg:order-3 order-3">
-            {/* Travel & Transit Preferences Card */}
+            {/* Travel & Transit Preferences Card (Moved from right column) */}
             <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm transition-all duration-300 hover:shadow-[0_8px_30px_rgba(0,0,0,0.02)]">
               <h3 className="text-[14px] font-bold text-slate-900 mb-1.5 flex items-center gap-2">
                 <Sparkles size={15} className="text-indigo-500 animate-pulse" />
@@ -685,9 +539,144 @@ export default function DashboardPage() {
                   </button>
                 </div>
               </div>
+
+              {/* Privacy Settings */}
+              <div className="flex flex-col gap-2 mt-4">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider leading-none">Privacy</span>
+                <button
+                  onClick={handleGhostModeToggle}
+                  className={`flex items-center justify-between p-3 rounded-xl border transition-all ${ghostMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-200 hover:bg-slate-100 text-slate-600'}`}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <EyeOff size={16} className={ghostMode ? 'text-indigo-400' : 'text-slate-400'} />
+                    <div className="flex flex-col text-left">
+                      <span className={`text-[12px] font-bold ${ghostMode ? 'text-white' : 'text-slate-800'}`}>Ghost Mode</span>
+                      <span className={`text-[10px] font-medium leading-tight mt-0.5 ${ghostMode ? 'text-slate-300' : 'text-slate-500'}`}>Fuzz exact location by 500m</span>
+                    </div>
+                  </div>
+                  <div className={`w-10 h-5 rounded-full flex items-center p-1 transition-colors ${ghostMode ? 'bg-indigo-500' : 'bg-slate-300'}`}>
+                    <div className={`w-3.5 h-3.5 bg-white rounded-full transition-transform ${ghostMode ? 'translate-x-4.5' : 'translate-x-0'}`} />
+                  </div>
+                </button>
+              </div>
             </div>
           </div>
-</div>
+
+          {/* RIGHT COLUMN: Recent Travels (3 Columns, moved from center column) */}
+          <div className="lg:col-span-3 flex flex-col gap-6 w-full lg:mt-8 lg:order-3 order-3">
+            {recentRooms.length > 0 && (
+              <div className="w-full bg-white border border-slate-200/80 shadow-sm rounded-2xl p-5 flex flex-col gap-4">
+
+                {/* Search & Filter Header */}
+                <div className="flex items-center gap-2">
+                  <Clock size={15} className="text-indigo-500" />
+                  <h3 className="text-[14px] font-bold text-slate-900 tracking-tight">Recent Travel Logs</h3>
+                </div>
+
+                {/* Search & Filter stacked in narrow column */}
+                <div className="flex flex-col gap-2.5">
+                  <div className="relative">
+                    <Search size={13} className="absolute left-3 top-2.5 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Search logs..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="w-full text-xs font-semibold bg-slate-50 border border-slate-200 rounded-lg py-2 pl-8 pr-3 outline-none focus:bg-white focus:border-indigo-500 transition-all placeholder-slate-400 text-slate-800"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-3 bg-slate-100 p-0.5 rounded-lg border border-slate-200 text-[10px] font-bold text-center">
+                    <button
+                      onClick={() => setFilterTab('all')}
+                      className={`py-1 rounded-md transition-all ${filterTab === 'all' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+                    >
+                      All
+                    </button>
+                    <button
+                      onClick={() => setFilterTab('hosted')}
+                      className={`py-1 rounded-md transition-all ${filterTab === 'hosted' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+                    >
+                      Hosted
+                    </button>
+                    <button
+                      onClick={() => setFilterTab('joined')}
+                      className={`py-1 rounded-md transition-all ${filterTab === 'joined' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+                    >
+                      Joined
+                    </button>
+                  </div>
+                </div>
+
+                {/* Grid list of Travel Logs */}
+                {filteredRooms.length === 0 ? (
+                  <div className="text-center py-6 flex flex-col items-center justify-center">
+                    <p className="text-slate-400 font-semibold text-[12px]">No logs found</p>
+                    <button onClick={() => { setSearchQuery(''); setFilterTab('all'); }} className="mt-1 text-[11px] font-bold text-indigo-600 hover:underline">
+                      Clear filters
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-3">
+                    {filteredRooms.map((room) => {
+                      const isRecent = room.joinedAt?.toMillis() > Date.now() - 24 * 60 * 60 * 1000;
+                      const isHostedByMe = room.hostId === user?.uid;
+                      const dateJoined = room.joinedAt ? new Date(room.joinedAt.toMillis()).toLocaleDateString() : 'Unknown';
+
+                      return (
+                        <div
+                          key={room.id}
+                          onClick={() => handleRejoin(room.id)}
+                          className="group relative bg-white border border-indigo-100/50 rounded-xl cursor-pointer p-3.5 hover:shadow-md hover:border-indigo-200 transition-all duration-200 flex flex-col gap-2.5"
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <div className="w-8 h-8 rounded-lg bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shrink-0">
+                                <MapPin size={16} strokeWidth={2.5} />
+                              </div>
+                              <div className="min-w-0">
+                                <h4 className="text-[14px] font-bold text-slate-800 truncate leading-tight group-hover:text-indigo-600 transition-colors">
+                                  {room.name || 'Unnamed Trip'}
+                                </h4>
+                                <p className="text-[11px] font-semibold text-slate-400 mt-0.5">Code: {room.id}</p>
+                              </div>
+                            </div>
+                            <button
+                              onClick={(e) => handleDeleteRecent(e, room.id)}
+                              className="text-slate-300 hover:text-rose-500 p-1.5 transition-colors rounded-lg hover:bg-rose-50 shrink-0"
+                              title="Delete Log"
+                            >
+                              <Trash2 size={15} strokeWidth={1.5} />
+                            </button>
+                          </div>
+
+                          <div className="flex items-center justify-between border-t border-slate-50 pt-2 text-[11px] text-slate-400 font-medium">
+                            <span>{dateJoined}</span>
+                            <div className="flex items-center gap-2">
+                              {isRecent ? (
+                                <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-600 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider">
+                                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                                  Active
+                                </span>
+                              ) : (
+                                <span className="text-[9px] font-bold uppercase tracking-wider bg-slate-50 text-slate-500 px-1.5 py-0.5 rounded border border-slate-100">
+                                  {isHostedByMe ? 'Hosted' : 'Joined'}
+                                </span>
+                              )}
+                              <span className="text-indigo-600 font-bold flex items-center gap-0.5 group-hover:translate-x-0.5 transition-transform">
+                                Resume <ChevronRight size={12} strokeWidth={2.5} />
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     </ProtectedRoute>
   );

@@ -877,12 +877,14 @@ export default function RoomPage() {
             {/* ── Members Panel ── */}
             <div className={`session-sidebar__panel ${sidebarTab === 'members' ? 'session-sidebar__panel--active' : ''}`}>
               <div className="session-card">
-                <div className="session-card__header">
-                  <div className="flex items-center gap-2">
-                    <Users size={16} className="text-[#0284C7]" />
-                    <p className="text-[14px] font-bold text-[#1E293B]">Active Members</p>
+                <div className="session-card__header flex items-center justify-between pb-3 border-b border-slate-100 mb-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-sky-50 flex items-center justify-center text-[#0284C7] border border-sky-100 shadow-sm shrink-0">
+                      <Users size={18} strokeWidth={2.5} />
+                    </div>
+                    <p className="text-[14px] font-extrabold text-slate-800">Active Members</p>
                   </div>
-                  <span className="bg-sky-50 text-[#0284C7] text-[11px] font-bold px-2 py-0.5 rounded-full">{participants.length}</span>
+                  <span className="bg-sky-50 text-[#0284C7] border border-sky-100 text-[11px] font-extrabold px-2.5 py-0.5 rounded-full">{participants.length}</span>
                 </div>
                 <div className="session-card__body">
                   <div className="space-y-2.5">
@@ -894,15 +896,15 @@ export default function RoomPage() {
                           key={p.id}
                           onClick={() => flyToUser(p.lat, p.lng)}
                           style={{ borderLeft: `4px solid ${userColor}` }}
-                          className="session-member-card group/member"
+                          className="session-member-card group/member transition-all duration-200 hover:bg-slate-50/50"
                         >
                           {/* Row header */}
                           <div className="flex items-center justify-between gap-2.5">
                             <div className="flex items-center gap-2.5 min-w-0">
                               <div className="relative shrink-0">
                                 <div
-                                  className="w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-[12px] border border-white/20"
-                                  style={{ backgroundColor: userColor, boxShadow: '0 1px 3px rgba(0,0,0,0.15)' }}
+                                  className="w-9 h-9 rounded-full flex items-center justify-center text-white font-bold text-[13px] border border-white/20"
+                                  style={{ backgroundColor: userColor, boxShadow: '0 2px 4px rgba(0,0,0,0.15)' }}
                                 >
                                   {p.name.charAt(0).toUpperCase()}
                                 </div>
@@ -925,35 +927,38 @@ export default function RoomPage() {
                             </div>
                             <div className="shrink-0">
                               {p.transitMode === 'walking' && (
-                                <span className="flex items-center gap-1 bg-emerald-50 text-emerald-700 text-[9px] font-extrabold px-1.5 py-0.5 rounded-md border border-emerald-100">
-                                  <Footprints size={10} /> Walk
+                                <span className="flex items-center gap-1.5 bg-emerald-50 text-emerald-700 text-[10px] font-bold px-2 py-0.5 rounded-lg border border-emerald-100/70 shadow-sm">
+                                  <Footprints size={14} className="text-emerald-600" /> Walk
                                 </span>
                               )}
                               {p.transitMode === 'cycling' && (
-                                <span className="flex items-center gap-1 bg-sky-50 text-sky-700 text-[9px] font-extrabold px-1.5 py-0.5 rounded-md border border-sky-100">
-                                  <Bike size={10} /> Cycle
+                                <span className="flex items-center gap-1.5 bg-sky-50 text-sky-700 text-[10px] font-bold px-2 py-0.5 rounded-lg border border-sky-100/70 shadow-sm">
+                                  <Bike size={14} className="text-sky-600" /> Cycle
                                 </span>
                               )}
                               {p.transitMode === 'driving' && (
-                                <span className="flex items-center gap-1 bg-indigo-50 text-indigo-700 text-[9px] font-extrabold px-1.5 py-0.5 rounded-md border border-indigo-100">
-                                  <Car size={10} /> Drive
+                                <span className="flex items-center gap-1.5 bg-indigo-50 text-indigo-700 text-[10px] font-bold px-2 py-0.5 rounded-lg border border-indigo-100/70 shadow-sm">
+                                  <Car size={14} className="text-indigo-600" /> Drive
                                 </span>
                               )}
                             </div>
                           </div>
 
                           {/* Stats row */}
-                          <div className="flex items-center justify-between mt-0.5">
+                          <div className="flex items-center justify-between mt-1.5">
                             {destination && p.distanceToDestination !== undefined ? (
                               <>
                                 {isArrived ? (
-                                  <span className="flex items-center gap-1.5 text-[10px] font-extrabold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-md border border-emerald-100">
-                                    <Sparkles size={11} className="text-emerald-500" /> Arrived
+                                  <span className="flex items-center gap-1.5 text-[10px] font-extrabold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-100">
+                                    <Sparkles size={12} className="text-emerald-500 animate-pulse" /> Arrived
                                   </span>
                                 ) : (
                                   <div className="flex items-center gap-1.5 flex-wrap">
                                     {p.eta !== undefined && (
-                                      <span className="bg-slate-100 text-slate-700 text-[10px] font-bold px-1.5 py-0.5 rounded-md border border-slate-200">
+                                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md border ${p.transitMode === 'walking' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' :
+                                          p.transitMode === 'cycling' ? 'bg-sky-50 text-sky-700 border-sky-100' :
+                                            'bg-indigo-50 text-indigo-700 border-indigo-100'
+                                        }`}>
                                         {formatETA(p.eta, p.transitMode)}
                                       </span>
                                     )}
