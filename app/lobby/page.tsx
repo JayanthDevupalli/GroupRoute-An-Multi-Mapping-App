@@ -24,7 +24,9 @@ import {
   Trees,
   Briefcase,
   Leaf,
-  Sparkles
+  Sparkles,
+  Users,
+  UserPlus
 } from 'lucide-react';
 import { db } from '@/lib/firebase';
 import { doc, getDoc, setDoc, deleteDoc, serverTimestamp, collection, query, orderBy, onSnapshot } from 'firebase/firestore';
@@ -37,6 +39,13 @@ interface RecentRoom {
   hostId?: string;
 }
 
+interface AppUser {
+  uid: string;
+  email: string;
+  displayName: string;
+  photoURL?: string;
+}
+
 export default function DashboardPage() {
   const { user } = useAuth();
   const router = useRouter();
@@ -47,6 +56,7 @@ export default function DashboardPage() {
   const [isCreating, setIsCreating] = useState(false);
   const [joinError, setJoinError] = useState<string | null>(null);
   const [recentRooms, setRecentRooms] = useState<RecentRoom[]>([]);
+  const [friends, setFriends] = useState<AppUser[]>([]);
   const [activeTab, setActiveTab] = useState<'create' | 'join'>('create');
 
   // Search, Filter and Apple Settings
@@ -74,6 +84,20 @@ export default function DashboardPage() {
     setPreferredCategory(category);
     localStorage.setItem('grouproute_preferred_category', category);
   };
+
+  // Fetch Friends
+  useEffect(() => {
+    if (!user) return;
+    const qFriends = query(collection(db, `users/${user.uid}/friends`));
+    const unsubscribeFriends = onSnapshot(qFriends, (snapshot) => {
+      const friendsList: AppUser[] = [];
+      snapshot.forEach((docSnap) => {
+        friendsList.push({ uid: docSnap.id, ...docSnap.data() } as AppUser);
+      });
+      setFriends(friendsList);
+    });
+    return () => unsubscribeFriends();
+  }, [user]);
 
   useEffect(() => {
     if (!user) return;
@@ -185,6 +209,41 @@ export default function DashboardPage() {
     }
   };
 
+  const handleQuickInvite = async (friendId: string, friendName: string) => {
+    if (!user) return;
+    try {
+      const roomId = generateRoomCode();
+      // Create room
+      await setDoc(doc(db, 'rooms', roomId), {
+        name: `Room with ${friendName}`,
+        createdAt: serverTimestamp(),
+        hostId: user.uid,
+        status: 'active'
+      });
+
+      // Add to current user's joined rooms
+      await setDoc(doc(db, `users/${user.uid}/joinedRooms`, roomId), {
+        joinedAt: serverTimestamp(),
+        lastActive: serverTimestamp()
+      }, { merge: true });
+
+      // Send invite to friend
+      const notifId = `${roomId}_${user.uid}`;
+      await setDoc(doc(db, `users/${friendId}/notifications`, notifId), {
+        type: 'join_request',
+        roomId: roomId,
+        friendUid: user.uid,
+        friendName: user.displayName || 'Guest',
+        timestamp: serverTimestamp()
+      });
+
+      setRoomId(roomId);
+      router.push(`/session`);
+    } catch (error) {
+      console.error("Error creating quick invite room:", error);
+    }
+  };
+
   const handleRejoin = (code: string) => {
     setRoomId(code);
     router.push(`/session`);
@@ -227,10 +286,10 @@ export default function DashboardPage() {
           <div className="absolute inset-0 opacity-[0.015]" style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z' fill='%23000000' fill-opacity='1'/%3E%3C/g%3E%3C/svg%3E")`, backgroundSize: '60px 60px' }} />
         </div>
 
-        <div className="w-full max-w-7xl px-4 md:px-6 z-10 grid grid-cols-1 lg:grid-cols-12 gap-8 items-start justify-center">
+        <div className="w-full max-w-[1400px] px-4 md:px-6 z-10 grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-start justify-center">
 
-          {/* LEFT COLUMN: Travel Profile & Quick Actions (4 Columns) */}
-          <div className="lg:col-span-4 flex flex-col gap-6 w-full lg:mt-8">
+          {/* LEFT COLUMN: Travel Profile & Friends (3 Columns) */}
+          <div className="lg:col-span-3 flex flex-col gap-6 w-full lg:mt-8 lg:order-1 order-2">
 
 
             {/* Travel Profile Card */}
@@ -246,84 +305,50 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {/* Travel & Transit Preferences Card */}
-            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm transition-all duration-300 hover:shadow-[0_8px_30px_rgba(0,0,0,0.02)]">
+            {/* Friends / Contacts Card */}
+            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm transition-all duration-300 hover:shadow-[0_8px_30px_rgba(0,0,0,0.02)] flex flex-col h-[280px]">
               <h3 className="text-[14px] font-bold text-slate-900 mb-1.5 flex items-center gap-2">
-                <Sparkles size={15} className="text-indigo-500 animate-pulse" />
-                Travel Preferences
+                <Users size={15} className="text-indigo-500" />
+                Friends & Contacts
               </h3>
               <p className="text-[11px] text-slate-500 font-medium mb-3.5 leading-relaxed">
-                Choose your default transit type and destination category for meeting.
+                Quickly start a session with other travelers.
               </p>
 
-              {/* Transit Mode Selection (Custom Segmented Control) */}
-              <div className="flex flex-col gap-2 mb-4">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider leading-none">Transit Mode</span>
-                <div className="grid grid-cols-3 bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs gap-1">
-                  <button
-                    onClick={() => handleTransitModeChange('driving')}
-                    className={`flex flex-col sm:flex-row items-center justify-center gap-1.5 py-2 px-1 rounded-lg font-bold transition-all ${transitMode === 'driving' ? 'bg-white text-slate-900 shadow-sm border border-slate-200/25' : 'text-slate-500 hover:text-slate-800'}`}
-                  >
-                    <Car size={13} className={transitMode === 'driving' ? 'text-indigo-600' : 'text-slate-400'} />
-                    <span className="text-[10px] sm:text-xs">Drive</span>
-                  </button>
-                  <button
-                    onClick={() => handleTransitModeChange('cycling')}
-                    className={`flex flex-col sm:flex-row items-center justify-center gap-1.5 py-2 px-1 rounded-lg font-bold transition-all ${transitMode === 'cycling' ? 'bg-white text-slate-900 shadow-sm border border-slate-200/25' : 'text-slate-500 hover:text-slate-800'}`}
-                  >
-                    <Bike size={13} className={transitMode === 'cycling' ? 'text-indigo-600' : 'text-slate-400'} />
-                    <span className="text-[10px] sm:text-xs">Cycle</span>
-                  </button>
-                  <button
-                    onClick={() => handleTransitModeChange('walking')}
-                    className={`flex flex-col sm:flex-row items-center justify-center gap-1.5 py-2 px-1 rounded-lg font-bold transition-all ${transitMode === 'walking' ? 'bg-white text-slate-900 shadow-sm border border-slate-200/25' : 'text-slate-500 hover:text-slate-800'}`}
-                  >
-                    <Footprints size={13} className={transitMode === 'walking' ? 'text-indigo-600' : 'text-slate-400'} />
-                    <span className="text-[10px] sm:text-xs">Walk</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Preferred Venue Category (Custom Icons & Buttons) */}
-              <div className="flex flex-col gap-2">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider leading-none">Default Category</span>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    onClick={() => handleCategoryChange('cafes')}
-                    className={`flex items-center gap-2 p-2.5 rounded-xl border text-left transition-all ${preferredCategory === 'cafes' ? 'bg-indigo-50/50 border-indigo-200 text-indigo-900' : 'bg-slate-50/40 border-slate-200/70 hover:bg-slate-50 text-slate-600'}`}
-                  >
-                    <Coffee size={14} className={preferredCategory === 'cafes' ? 'text-indigo-600' : 'text-slate-400'} />
-                    <span className="text-[11px] font-bold">Cafes</span>
-                  </button>
-                  <button
-                    onClick={() => handleCategoryChange('restaurants')}
-                    className={`flex items-center gap-2 p-2.5 rounded-xl border text-left transition-all ${preferredCategory === 'restaurants' ? 'bg-indigo-50/50 border-indigo-200 text-indigo-900' : 'bg-slate-50/40 border-slate-200/70 hover:bg-slate-50 text-slate-600'}`}
-                  >
-                    <Utensils size={14} className={preferredCategory === 'restaurants' ? 'text-indigo-600' : 'text-slate-400'} />
-                    <span className="text-[11px] font-bold">Dine Out</span>
-                  </button>
-                  <button
-                    onClick={() => handleCategoryChange('parks')}
-                    className={`flex items-center gap-2 p-2.5 rounded-xl border text-left transition-all ${preferredCategory === 'parks' ? 'bg-indigo-50/50 border-indigo-200 text-indigo-900' : 'bg-slate-50/40 border-slate-200/70 hover:bg-slate-50 text-slate-600'}`}
-                  >
-                    <Trees size={14} className={preferredCategory === 'parks' ? 'text-indigo-600' : 'text-slate-400'} />
-                    <span className="text-[11px] font-bold">Parks</span>
-                  </button>
-                  <button
-                    onClick={() => handleCategoryChange('workspaces')}
-                    className={`flex items-center gap-2 p-2.5 rounded-xl border text-left transition-all ${preferredCategory === 'workspaces' ? 'bg-indigo-50/50 border-indigo-200 text-indigo-900' : 'bg-slate-50/40 border-slate-200/70 hover:bg-slate-50 text-slate-600'}`}
-                  >
-                    <Briefcase size={14} className={preferredCategory === 'workspaces' ? 'text-indigo-600' : 'text-slate-400'} />
-                    <span className="text-[11px] font-bold">Office</span>
-                  </button>
-                </div>
+              <div className="flex-1 overflow-y-auto pr-1 -mr-1 space-y-2.5">
+                {friends.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center h-full text-center py-4">
+                    <UserPlus size={24} className="text-slate-300 mb-2" />
+                    <p className="text-xs text-slate-400 font-medium px-4">Join a session to meet travelers and add friends</p>
+                  </div>
+                ) : (
+                  friends.map((friend) => (
+                    <div key={friend.uid} className="flex items-center justify-between p-2.5 rounded-xl border border-slate-100 bg-slate-50 hover:bg-white hover:border-slate-200 hover:shadow-sm transition-all group">
+                      <div className="flex items-center gap-3 min-w-0 pr-2">
+                        <div className="w-8 h-8 rounded-full bg-indigo-50 text-indigo-700 font-bold flex items-center justify-center border border-indigo-100 text-xs shrink-0">
+                          {friend.displayName?.charAt(0).toUpperCase() || 'U'}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-[13px] font-bold text-slate-800 truncate leading-tight">{friend.displayName}</p>
+                          <p className="text-[10px] font-medium text-slate-400 truncate">{friend.email}</p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => handleQuickInvite(friend.uid, friend.displayName || 'Guest')}
+                        className="opacity-0 group-hover:opacity-100 transition-opacity bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-bold px-3 py-1.5 rounded-lg shrink-0 shadow-sm"
+                      >
+                        Invite
+                      </button>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
 
           </div>
 
-          {/* RIGHT COLUMN: Map Room Actions & Recent Rooms Grid (8 Columns) */}
-          <div className="lg:col-span-8 flex flex-col gap-6 w-full lg:mt-8">
+          {/* CENTER COLUMN: Map Room Actions & Recent Rooms Grid (6 Columns) */}
+          <div className="lg:col-span-6 flex flex-col gap-6 w-full lg:mt-8 lg:order-2 order-1">
             
             {/* Control Panel (Start New / Join Existing) */}
             <div className="bg-white border border-slate-200 shadow-sm rounded-2xl p-6 md:p-8 flex flex-col relative overflow-hidden">
@@ -491,57 +516,90 @@ export default function DashboardPage() {
                     </button>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 gap-4 mt-4">
                     {filteredRooms.map((room) => {
                       const isRecent = room.joinedAt?.toMillis() > Date.now() - 24 * 60 * 60 * 1000;
                       const isHostedByMe = room.hostId === user?.uid;
+                      const dateJoined = room.joinedAt ? new Date(room.joinedAt.toMillis()).toLocaleDateString() : 'Unknown';
                       
                       return (
                         <div
                           key={room.id}
                           onClick={() => handleRejoin(room.id)}
-                          className="group bg-slate-50/50 border border-slate-200 hover:border-slate-300 hover:bg-white rounded-xl p-4.5 cursor-pointer shadow-sm hover:shadow-md transition-all duration-200 relative flex flex-col justify-between h-[135px]"
+                          className="group relative bg-white border border-indigo-100/50 rounded-2xl cursor-pointer shadow-[0_2px_10px_rgba(0,0,0,0.02)] hover:shadow-[0_8px_30px_rgba(79,70,229,0.08)] hover:border-indigo-200 transition-all duration-300 overflow-hidden flex items-center p-4 min-h-[90px]"
                         >
-                          <div>
-                            <div className="flex items-center justify-between gap-2 mb-1.5">
-                              <span className="text-[10px] font-mono font-bold bg-slate-100 text-slate-650 px-2 py-0.5 rounded border border-slate-200 uppercase tracking-wider">
-                                Token: {room.id}
-                              </span>
-                              
-                              <div className="flex items-center gap-1.5">
-                                {/* Hosted / Joined Pill */}
-                                <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${isHostedByMe ? 'bg-indigo-50 border border-indigo-200 text-indigo-700' : 'bg-slate-100 border border-slate-200 text-slate-650'}`}>
-                                  {isHostedByMe ? 'Host' : 'Joined'}
-                                </span>
+                          {/* Right side ripple background */}
+                          <div className="absolute right-20 top-1/2 -translate-y-1/2 w-[200px] h-[200px] pointer-events-none overflow-hidden flex items-center justify-center opacity-30 group-hover:opacity-60 transition-opacity">
+                            <div className="absolute w-[80px] h-[80px] rounded-full border border-slate-200"></div>
+                            <div className="absolute w-[140px] h-[140px] rounded-full border border-slate-200"></div>
+                            <div className="absolute w-[200px] h-[200px] rounded-full border border-slate-200"></div>
+                          </div>
 
-                                {/* Active status */}
-                                {isRecent && (
-                                  <span className="inline-flex items-center gap-1 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full text-[9px] font-bold text-emerald-700 uppercase">
+                          {/* Content */}
+                          <div className="relative z-10 flex items-center justify-between w-full">
+                            
+                            {/* Left: Icon & Text */}
+                            <div className="flex items-center gap-4">
+                              <div className="w-[52px] h-[52px] rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 group-hover:scale-105 transition-transform shrink-0">
+                                <MapPin size={22} strokeWidth={2.5} />
+                              </div>
+                              <div className="flex flex-col gap-1">
+                                <h4 className="text-[17px] font-extrabold text-slate-800 tracking-tight group-hover:text-indigo-900 transition-colors">
+                                  {room.name || 'Unnamed Trip'}
+                                </h4>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-[11px] font-bold bg-slate-100 text-slate-600 px-2 py-0.5 rounded-md uppercase tracking-wider">
+                                    {room.id}
+                                  </span>
+                                  <span className="text-slate-300 text-[10px]">●</span>
+                                  <span className="text-[12px] font-semibold text-slate-500">
+                                    {dateJoined}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Right: Avatars, Status, Actions */}
+                            <div className="flex items-center gap-6">
+                              
+                              {/* Avatars */}
+                              <div className="flex items-center -space-x-2">
+                                <div className="w-8 h-8 rounded-full border-2 border-white bg-slate-100 flex items-center justify-center text-[11px] font-bold text-slate-700 shadow-sm z-20">
+                                  {user?.displayName?.charAt(0).toUpperCase() || 'U'}
+                                </div>
+                                <div className="w-8 h-8 rounded-full border-2 border-white bg-indigo-50 flex items-center justify-center text-[14px] font-bold text-indigo-600 shadow-sm z-10">
+                                  +
+                                </div>
+                              </div>
+
+                              {/* Status & Resume */}
+                              <div className="flex flex-col items-center gap-1.5 w-[75px]">
+                                {isRecent ? (
+                                  <span className="inline-flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full text-[10px] font-bold text-emerald-600 uppercase tracking-wide w-full justify-center">
                                     <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
                                     Active
                                   </span>
+                                ) : (
+                                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold tracking-wide w-full justify-center uppercase ${isHostedByMe ? 'bg-indigo-50 border border-indigo-100 text-indigo-600' : 'bg-slate-50 border border-slate-200 text-slate-500'}`}>
+                                    {isHostedByMe ? 'Hosted' : 'Joined'}
+                                  </span>
                                 )}
-
-                                {/* Delete log */}
-                                <button
-                                  onClick={(e) => handleDeleteRecent(e, room.id)}
-                                  className="text-slate-400 hover:text-rose-600 p-1 opacity-0 group-hover:opacity-100 transition-opacity"
-                                  title="Delete Log"
-                                >
-                                  <Trash2 size={13} />
-                                </button>
+                                
+                                <div className="flex items-center gap-1 text-[12px] font-bold text-indigo-600 opacity-90 group-hover:opacity-100">
+                                  Resume <ChevronRight size={14} strokeWidth={3} className="group-hover:translate-x-0.5 transition-transform" />
+                                </div>
                               </div>
-                            </div>
-                            <h4 className="text-[15px] font-bold text-slate-800 tracking-tight mt-1 truncate pr-4">
-                              {room.name || room.id}
-                            </h4>
-                          </div>
+                              
+                              {/* Delete */}
+                              <button
+                                onClick={(e) => handleDeleteRecent(e, room.id)}
+                                className="text-slate-300 hover:text-rose-500 p-2 transition-colors rounded-lg hover:bg-rose-50"
+                                title="Delete Log"
+                              >
+                                <Trash2 size={18} strokeWidth={1.5} />
+                              </button>
 
-                          <div className="flex items-center justify-between pt-2.5 border-t border-slate-250">
-                            <span className="text-[12px] font-semibold text-slate-500 group-hover:text-indigo-600 transition-colors flex items-center gap-1.5">
-                              Resume Session
-                            </span>
-                            <ChevronRight size={15} className="text-slate-400 group-hover:translate-x-0.5 group-hover:text-indigo-600 transition-all" />
+                            </div>
                           </div>
                         </div>
                       );
@@ -552,7 +610,84 @@ export default function DashboardPage() {
             )}
           </div>
 
-        </div>
+        
+          {/* RIGHT COLUMN: Travel Preferences (3 Columns) */}
+          <div className="lg:col-span-3 flex flex-col gap-6 w-full lg:mt-8 lg:order-3 order-3">
+            {/* Travel & Transit Preferences Card */}
+            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm transition-all duration-300 hover:shadow-[0_8px_30px_rgba(0,0,0,0.02)]">
+              <h3 className="text-[14px] font-bold text-slate-900 mb-1.5 flex items-center gap-2">
+                <Sparkles size={15} className="text-indigo-500 animate-pulse" />
+                Travel Preferences
+              </h3>
+              <p className="text-[11px] text-slate-500 font-medium mb-3.5 leading-relaxed">
+                Choose your default transit type and destination category for meeting.
+              </p>
+
+              {/* Transit Mode Selection (Custom Segmented Control) */}
+              <div className="flex flex-col gap-2 mb-4">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider leading-none">Transit Mode</span>
+                <div className="grid grid-cols-3 bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs gap-1">
+                  <button
+                    onClick={() => handleTransitModeChange('driving')}
+                    className={`flex flex-col sm:flex-row items-center justify-center gap-1.5 py-2 px-1 rounded-lg font-bold transition-all ${transitMode === 'driving' ? 'bg-white text-slate-900 shadow-sm border border-slate-200/25' : 'text-slate-500 hover:text-slate-800'}`}
+                  >
+                    <Car size={13} className={transitMode === 'driving' ? 'text-indigo-600' : 'text-slate-400'} />
+                    <span className="text-[10px] sm:text-xs">Drive</span>
+                  </button>
+                  <button
+                    onClick={() => handleTransitModeChange('cycling')}
+                    className={`flex flex-col sm:flex-row items-center justify-center gap-1.5 py-2 px-1 rounded-lg font-bold transition-all ${transitMode === 'cycling' ? 'bg-white text-slate-900 shadow-sm border border-slate-200/25' : 'text-slate-500 hover:text-slate-800'}`}
+                  >
+                    <Bike size={13} className={transitMode === 'cycling' ? 'text-indigo-600' : 'text-slate-400'} />
+                    <span className="text-[10px] sm:text-xs">Cycle</span>
+                  </button>
+                  <button
+                    onClick={() => handleTransitModeChange('walking')}
+                    className={`flex flex-col sm:flex-row items-center justify-center gap-1.5 py-2 px-1 rounded-lg font-bold transition-all ${transitMode === 'walking' ? 'bg-white text-slate-900 shadow-sm border border-slate-200/25' : 'text-slate-500 hover:text-slate-800'}`}
+                  >
+                    <Footprints size={13} className={transitMode === 'walking' ? 'text-indigo-600' : 'text-slate-400'} />
+                    <span className="text-[10px] sm:text-xs">Walk</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Preferred Venue Category (Custom Icons & Buttons) */}
+              <div className="flex flex-col gap-2">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider leading-none">Default Category</span>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => handleCategoryChange('cafes')}
+                    className={`flex items-center gap-2 p-2.5 rounded-xl border text-left transition-all ${preferredCategory === 'cafes' ? 'bg-indigo-50/50 border-indigo-200 text-indigo-900' : 'bg-slate-50/40 border-slate-200/70 hover:bg-slate-50 text-slate-600'}`}
+                  >
+                    <Coffee size={14} className={preferredCategory === 'cafes' ? 'text-indigo-600' : 'text-slate-400'} />
+                    <span className="text-[11px] font-bold">Cafes</span>
+                  </button>
+                  <button
+                    onClick={() => handleCategoryChange('restaurants')}
+                    className={`flex items-center gap-2 p-2.5 rounded-xl border text-left transition-all ${preferredCategory === 'restaurants' ? 'bg-indigo-50/50 border-indigo-200 text-indigo-900' : 'bg-slate-50/40 border-slate-200/70 hover:bg-slate-50 text-slate-600'}`}
+                  >
+                    <Utensils size={14} className={preferredCategory === 'restaurants' ? 'text-indigo-600' : 'text-slate-400'} />
+                    <span className="text-[11px] font-bold">Dine Out</span>
+                  </button>
+                  <button
+                    onClick={() => handleCategoryChange('parks')}
+                    className={`flex items-center gap-2 p-2.5 rounded-xl border text-left transition-all ${preferredCategory === 'parks' ? 'bg-indigo-50/50 border-indigo-200 text-indigo-900' : 'bg-slate-50/40 border-slate-200/70 hover:bg-slate-50 text-slate-600'}`}
+                  >
+                    <Trees size={14} className={preferredCategory === 'parks' ? 'text-indigo-600' : 'text-slate-400'} />
+                    <span className="text-[11px] font-bold">Parks</span>
+                  </button>
+                  <button
+                    onClick={() => handleCategoryChange('workspaces')}
+                    className={`flex items-center gap-2 p-2.5 rounded-xl border text-left transition-all ${preferredCategory === 'workspaces' ? 'bg-indigo-50/50 border-indigo-200 text-indigo-900' : 'bg-slate-50/40 border-slate-200/70 hover:bg-slate-50 text-slate-600'}`}
+                  >
+                    <Briefcase size={14} className={preferredCategory === 'workspaces' ? 'text-indigo-600' : 'text-slate-400'} />
+                    <span className="text-[11px] font-bold">Office</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+</div>
       </div>
     </ProtectedRoute>
   );

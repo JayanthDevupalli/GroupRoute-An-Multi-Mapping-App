@@ -69,7 +69,7 @@ export default function ChatPanel({ roomId, isPermanent = false, onClose }: Chat
 
   if (!isOpen && !isPermanent) {
     return (
-      <button 
+      <button
         onClick={() => setIsOpen(true)}
         className="fixed bottom-6 right-6 w-14 h-14 bg-[#0284C7] hover:bg-[#0369A1] text-white rounded-full shadow-[0_8px_30px_rgb(2,132,199,0.3)] flex items-center justify-center transition-transform hover:scale-110 z-50 lg:hidden"
       >
@@ -79,13 +79,13 @@ export default function ChatPanel({ roomId, isPermanent = false, onClose }: Chat
   }
 
   // Dashboard sidebar styling for permanent mode
-  const containerClasses = isPermanent 
+  const containerClasses = isPermanent
     ? "w-full h-full bg-white border border-slate-200 shadow-sm rounded-3xl flex flex-col overflow-hidden hidden lg:flex"
     : "fixed bottom-6 right-6 w-[340px] h-[480px] bg-white rounded-3xl shadow-[0_12px_40px_rgb(0,0,0,0.12)] border border-slate-200 flex flex-col overflow-hidden z-50 lg:hidden";
 
   return (
     <div className={containerClasses}>
-      
+
       {/* Header */}
       <div className="p-4 px-5 flex items-center justify-between border-b border-slate-100 bg-white z-10 shadow-sm">
         <h3 className="font-semibold text-[#1E293B] flex items-center gap-2.5 text-[15px]">
@@ -136,15 +136,15 @@ export default function ChatPanel({ roomId, isPermanent = false, onClose }: Chat
       {/* Input Area */}
       <div className="p-3 bg-white border-t border-slate-100 z-10">
         <form onSubmit={handleSendMessage} className="flex items-center gap-2 bg-[#F8FAFC] border border-slate-200 p-1 pl-4 rounded-full focus-within:bg-white focus-within:border-[#0284C7] focus-within:ring-2 focus-within:ring-[#0284C7]/10 transition-all">
-          <input 
-            type="text" 
+          <input
+            type="text"
             value={newMessage}
             onChange={(e) => setNewMessage(e.target.value)}
             placeholder="Type a message..."
             className="flex-1 bg-transparent text-[14px] outline-none text-[#1E293B] placeholder-[#94A3B8]"
           />
-          <button 
-            type="submit" 
+          <button
+            type="submit"
             disabled={!newMessage.trim()}
             className="w-9 h-9 bg-[#0284C7] text-white rounded-full flex items-center justify-center disabled:opacity-40 transition-colors shrink-0 hover:bg-[#0369A1]"
           >

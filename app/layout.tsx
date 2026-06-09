@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "GroupRoute — The Fair Way to Meet Up",
+  title: "GroupRoute - The Fair Way to Meet Up",
   description: "Create a secure gatekeeper lobby, analyze everyone's location, and find the mathematically optimal meeting point for your group.",
 };
 

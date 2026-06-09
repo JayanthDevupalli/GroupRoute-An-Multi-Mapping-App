@@ -40,16 +40,28 @@ export default function Navbar() {
 
   const handleAccept = async (notif: Notification) => {
     try {
-      // 1. Add them to participants
-      await setDoc(doc(db, `rooms/${notif.roomId}/participants`, notif.friendUid), {
-        name: notif.friendName,
-        joinedAt: serverTimestamp(),
-        // Location will be updated by the client once they get access
-        lat: 0,
-        lng: 0 
-      });
-      // 2. Remove notification
-      await deleteDoc(doc(db, `users/${user?.uid}/notifications`, notif.id));
+      if (notif.type === 'friend_request') {
+        await setDoc(doc(db, `users/${user?.uid}/friends`, notif.friendUid), {
+          displayName: notif.friendName,
+          addedAt: serverTimestamp()
+        });
+        await setDoc(doc(db, `users/${notif.friendUid}/friends`, user?.uid as string), {
+          displayName: user?.displayName || 'User',
+          addedAt: serverTimestamp()
+        });
+        await deleteDoc(doc(db, `users/${user?.uid}/notifications`, notif.id));
+      } else {
+        // 1. Add them to participants
+        await setDoc(doc(db, `rooms/${notif.roomId}/participants`, notif.friendUid), {
+          name: notif.friendName,
+          joinedAt: serverTimestamp(),
+          // Location will be updated by the client once they get access
+          lat: 0,
+          lng: 0 
+        });
+        // 2. Remove notification
+        await deleteDoc(doc(db, `users/${user?.uid}/notifications`, notif.id));
+      }
     } catch (err) {
       console.error("Failed to accept request", err);
     }
@@ -114,7 +126,9 @@ export default function Navbar() {
                           </div>
                           <div className="flex-1 min-w-0">
                             <p className="text-[14px] font-semibold text-[#1E293B] leading-tight truncate">{notif.friendName}</p>
-                            <p className="text-[12px] text-[#64748B] truncate">Requested {notif.roomId}</p>
+                            <p className="text-[12px] text-[#64748B] truncate">
+                              {notif.type === 'friend_request' ? 'Sent a friend request' : `Requested ${notif.roomId}`}
+                            </p>
                           </div>
                           <div className="flex items-center gap-1">
                             <button onClick={() => handleReject(notif)} className="w-8 h-8 rounded-full bg-rose-50 text-rose-500 flex items-center justify-center hover:bg-rose-500 hover:text-white transition-colors">
